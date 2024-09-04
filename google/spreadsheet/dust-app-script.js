@@ -120,7 +120,7 @@ function createConversationAndGetContent(assistantId, prompt, input) {
         fullName: "Google Sheets User",
         email: "user@example.com",
         profilePictureUrl: "",
-        origin: "web",
+        origin: "gsheet",
       },
     },
     blocking: true,
