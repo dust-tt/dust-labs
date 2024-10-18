@@ -8,21 +8,26 @@ const MODJO_BASE_URL = process.env.MODJO_BASE_URL || "https://api.modjo.ai";
 const MODJO_API_KEY = process.env.MODJO_API_KEY;
 const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
+const DUST_VAULT_ID = process.env.DUST_VAULT_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
+const INCLUDE_CONTACT_DETAILS = process.env.INCLUDE_CONTACT_DETAILS !== 'false';
+const INCLUDE_RECORDING_URL = process.env.INCLUDE_RECORDING_URL !== 'false';
 
 if (
   !MODJO_API_KEY ||
   !DUST_API_KEY ||
   !DUST_WORKSPACE_ID ||
+  !DUST_VAULT_ID ||
   !DUST_DATASOURCE_ID
 ) {
   throw new Error(
-    "Please provide values for MODJO_API_KEY, DUST_API_KEY, DUST_WORKSPACE_ID, and DUST_DATASOURCE_ID in .env file."
+    "Please provide values for MODJO_API_KEY, DUST_API_KEY, DUST_WORKSPACE_ID, DUST_VAULT_ID, and DUST_DATASOURCE_ID in .env file."
   );
 }
 
 // Can be `null` if you want to fetch all transcripts
-const TRANSCRIPTS_SINCE = "2024-01-01";
+const YESTERDAY = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+const TRANSCRIPTS_SINCE = process.env.TRANSCRIPTS_SINCE === "null" ? null : (process.env.TRANSCRIPTS_SINCE || YESTERDAY);
 
 const modjoApi = axios.create({
   baseURL: MODJO_BASE_URL,
@@ -62,7 +67,9 @@ interface ModjoCallExport {
     recording: {
       url: string;
     };
-    aiSummary: string | null;
+    highlights: {
+      content: string;
+    } | null;
     speakers: {
       contactId?: number;
       userId?: number;
@@ -79,6 +86,9 @@ interface ModjoCallExport {
       content: string;
       topics: { topicId: number; name: string }[];
     }[];
+    tags: {
+      name: string;
+    }[];
   };
 }
 
@@ -86,6 +96,12 @@ async function getModjoTranscripts(): Promise<ModjoCallExport[]> {
   let allTranscripts: ModjoCallExport[] = [];
   let page = 1;
   const perPage = 50;
+
+  console.log(
+    `Will retrieve all transcripts since: ${TRANSCRIPTS_SINCE}\n` +
+    `Will include contact details: ${INCLUDE_CONTACT_DETAILS}\n` +
+    `Will include recording URLs: ${INCLUDE_RECORDING_URL}`
+  );
 
   do {
     try {
@@ -104,9 +120,10 @@ async function getModjoTranscripts(): Promise<ModjoCallExport[]> {
         },
         relations: {
           recording: true,
-          aiSummary: true,
+          highlights: true,
           transcript: true,
           speakers: true,
+          tags: true,
         },
       });
 
@@ -136,26 +153,31 @@ async function upsertToDustDatasource(transcript: ModjoCallExport) {
   const documentId = `modjo-transcript-${transcript.callId}`;
 
   let content = `Call ID: ${transcript.callId}\n`;
+  content += `Tags: ${transcript.relations.tags.map(tag => `"${tag.name}"`).join(', ') }\n`;
   content += `Title: ${transcript.title}\n`;
   content += `Date: ${transcript.startDate}\n`;
   content += `Duration: ${transcript.duration} seconds\n`;
   content += `Provider: ${transcript.provider}\n`;
   content += `Language: ${transcript.language}\n`;
   if (transcript.callCrmId) content += `CRM ID: ${transcript.callCrmId}\n`;
-  if (transcript.relations.recording)
+  if (INCLUDE_RECORDING_URL && transcript.relations.recording)
     content += `Recording URL: ${transcript.relations.recording.url}\n`;
-  if (transcript.relations.aiSummary)
-    content += `AI Summary: ${transcript.relations.aiSummary}\n`;
 
-  content += "\nSpeakers:\n";
+
+  content += "\n# Speakers\n";
   transcript.relations.speakers.forEach((speaker) => {
     content += `${speaker.speakerId}: ${speaker.name} (${speaker.type})`;
-    if (speaker.email) content += ` - Email: ${speaker.email}`;
-    if (speaker.phoneNumber) content += ` - Phone: ${speaker.phoneNumber}`;
+    if (INCLUDE_CONTACT_DETAILS) {
+      if (speaker.email) content += ` - Email: ${speaker.email}`;
+      if (speaker.phoneNumber) content += ` - Phone: ${speaker.phoneNumber}`;
+    }
     content += "\n";
   });
 
-  content += "\nTranscript:\n";
+  if (transcript.relations.highlights)
+    content += `\n# Highlights\n${transcript.relations.highlights.content.trim()}\n`;
+
+  content += "\n# Transcript\n";
   transcript.relations.transcript.forEach((entry) => {
     const speaker = transcript.relations.speakers.find(
       (s) => s.speakerId === entry.speakerId
@@ -173,9 +195,10 @@ async function upsertToDustDatasource(transcript: ModjoCallExport) {
   try {
     await limiter.schedule(() =>
       dustApi.post(
-        `/w/${DUST_WORKSPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
+        `/w/${DUST_WORKSPACE_ID}/vaults/${DUST_VAULT_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
         {
           text: content.trim(),
+          source_url: `https://app.modjo.ai/call-details/${transcript.callId}`,
         }
       )
     );
