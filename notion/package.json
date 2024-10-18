@@ -1,0 +1,23 @@
+{
+  "name": "dust-to-notion",
+  "version": "0.1.0",
+  "description": "Script to synchronise the list of Dust assistants in Notion",
+  "main": "index.ts",
+  "scripts": {
+    "sync-list-of-assistants-to-notion-database": "tsx sync-list-of-assistants-to-notion-database.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "axios": "^1.4.0",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.0.4"
+  }
+}
