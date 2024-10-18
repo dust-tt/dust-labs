@@ -36,6 +36,7 @@ ZENDESK_EMAIL=your_zendesk_email
 ZENDESK_API_TOKEN=your_zendesk_api_token
 DUST_API_KEY=your_dust_api_key
 DUST_WORKSPACE_ID=your_dust_workspace_id
+DUST_VAULT_ID=your_dust_vault_id
 DUST_DATASOURCE_ID=your_dust_datasource_id
 ```
 

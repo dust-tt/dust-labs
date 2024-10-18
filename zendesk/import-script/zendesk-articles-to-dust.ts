@@ -9,6 +9,7 @@ const ZENDESK_EMAIL = process.env.ZENDESK_EMAIL;
 const ZENDESK_API_TOKEN = process.env.ZENDESK_API_TOKEN;
 const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
+const DUST_VAULT_ID = process.env.DUST_VAULT_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
 
 const missingEnvVars = [
@@ -17,6 +18,7 @@ const missingEnvVars = [
   ['ZENDESK_API_TOKEN', ZENDESK_API_TOKEN],
   ['DUST_API_KEY', DUST_API_KEY],
   ['DUST_WORKSPACE_ID', DUST_WORKSPACE_ID],
+  ['DUST_VAULT_ID', DUST_VAULT_ID],
   ['DUST_DATASOURCE_ID', DUST_DATASOURCE_ID]
 ].filter(([name, value]) => !value).map(([name]) => name);
 
@@ -98,23 +100,24 @@ interface User {
 
 async function getAllArticles(): Promise<Article[]> {
   let allArticles: Article[] = [];
-  let nextPage: string | null = null;
   let currentPage = 1;
 
   do {
     try {
       console.log(`Fetching articles page: ${currentPage}`);
       const response: AxiosResponse<{ articles: Article[], next_page: string | null }> = await zendeskApi.get('/help_center/articles.json', {
-        params: {
-          ...(nextPage ? { page: nextPage } : {})
-        }
+        params: { page: currentPage }
       });
 
       allArticles = allArticles.concat(response.data.articles);
-      nextPage = response.data.next_page;
+      console.log(`Retrieved ${response.data.articles.length} articles. Total: ${allArticles.length}`);
+
+      // If there's no next page, it means we've fetched all articles
+      if (!response.data.next_page) {
+        break;
+      }
       currentPage++;
 
-      console.log(`Retrieved ${response.data.articles.length} articles. Total: ${allArticles.length}`);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 429) {
         console.error('Rate limit exceeded. Waiting before retrying...');
@@ -123,7 +126,7 @@ async function getAllArticles(): Promise<Article[]> {
         throw error;
       }
     }
-  } while (nextPage);
+  } while (currentPage);
 
   console.log(`Total articles retrieved: ${allArticles.length}`);
   return allArticles;
@@ -163,7 +166,7 @@ ${article.body}
 
   try {
     await limitedDustApiPost(
-      `/w/${DUST_WORKSPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
+      `/w/${DUST_WORKSPACE_ID}/vaults/${DUST_VAULT_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
       {
         text: content,
         source_url: article.html_url
