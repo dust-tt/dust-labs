@@ -89,16 +89,16 @@ function processSelected() {
       <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
       <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-      
+
       <style>
         * {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
-        
+
         body {
           padding: 10px;
         }
-        
+
         .spinner {
           display: inline-block;
           width: 12px;
@@ -110,26 +110,26 @@ function processSelected() {
           margin-right: 8px;
           vertical-align: middle;
         }
-        
+
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        
-        #warningtext { 
+
+        #warningtext {
           text-align: center;
           margin: 15px 0;
           color: #666;
           font-size: 0.6em;
         }
-        
+
         #status {
           text-align: center;
           margin: 15px 0;
           color: #666;
           line-height: 1.4;
         }
-        
+
         select, input, textarea {
           width: 100%;
           padding-top: 8px;
@@ -139,11 +139,11 @@ function processSelected() {
           border-radius: 4px;
           font-family: inherit;
         }
-        
+
         select {
           background: white;
         }
-        
+
         input[type="submit"], input[type="button"] {
           background-color: #61A5FA;
           color: white;
@@ -152,50 +152,50 @@ function processSelected() {
           cursor: pointer;
           transition: background-color 0.2s ease;
         }
-        
+
         input[type="submit"]:hover, input[type="button"]:hover {
           background-color: #4884d9;
         }
-        
+
         input[type="submit"]:disabled {
           background-color: #cccccc;
           cursor: not-allowed;
         }
-        
+
         .error {
           color: red;
           display: none;
           margin-bottom: 10px;
         }
-        
+
         label {
           font-weight: 500;
           color: #333;
           margin-bottom: 5px;
           display: inline-block;
         }
-        
+
         .select2-container {
           width: 100% !important;
           margin-bottom: 10px;
         }
-        
+
         .select2-selection {
           height: 38px !important;
           padding: 4px !important;
         }
-        
+
         .select2-selection__arrow {
           height: 36px !important;
         }
-        
+
         /* Modified/New styles */
         #cellRange {
           width: calc(100% - 90px);
           display: inline-block;
           margin-right: 5px;
         }
-        
+
         /* Update the existing button styles */
         input[type="submit"], input[type="button"], #selectCellsBtn {
           background-color: #61A5FA;
@@ -217,21 +217,21 @@ function processSelected() {
           border-radius: 4px;
           display: inline-block;
         }
-        
+
         #targetColumn {
           width: 100%;
         }
-        
+
         input[type="submit"] {
           width: 100%;
           margin-top: 10px;
         }
-        
+
         .button-group {
           display: block;
           margin-top: 20px;
         }
-        
+
         textarea {
           width: 99%;
           resize: vertical;
@@ -270,7 +270,7 @@ function processSelected() {
             debouncedGetSelection();
           });
         </script>
-        
+
         <div id="warningtext">Results will appear in the cells immediately to the right of your selection.</div>
         <div id="status"></div>
         <div class="button-group">
@@ -297,7 +297,7 @@ function processSelected() {
         function getSelection() {
           const selectCellsBtn = document.getElementById('selectCellsBtn');
           const cellRangeInput = document.getElementById('cellRange');
-          
+
           // Add loading state
           selectCellsBtn.disabled = true;
           selectCellsBtn.value = '...';
@@ -306,7 +306,7 @@ function processSelected() {
             .withSuccessHandler(function(result) {
               selectCellsBtn.disabled = false;
               selectCellsBtn.value = 'Use Selection';
-              
+
               if (result.success) {
                 cellRangeInput.value = result.range;
               } else {
@@ -358,7 +358,7 @@ function processSelected() {
         google.script.run
           .withSuccessHandler(function(data) {
             const select = document.getElementById('assistant');
-            
+
             if (data.error) {
               const errorDiv = document.getElementById('loadError');
               errorDiv.textContent = '❌ ' + data.error;
@@ -373,12 +373,12 @@ function processSelected() {
 
             // Clear the loading option
             select.innerHTML = '';
-            
+
             // Add empty option for placeholder
             const emptyOption = document.createElement('option');
             emptyOption.value = '';
             select.appendChild(emptyOption);
-            
+
             // Add all assistants
             data.assistants.forEach(a => {
               const option = document.createElement('option');
@@ -386,7 +386,7 @@ function processSelected() {
               option.textContent = a.name;
               select.appendChild(option);
             });
-            
+
             // Enable the select and update placeholder
             select.disabled = false;
             $('#assistant').select2({
@@ -399,7 +399,7 @@ function processSelected() {
                 }
               }
             });
-            
+
             // If no assistants were loaded, show a message
             if (data.assistants.length === 0) {
               $('#assistant').select2({
@@ -414,7 +414,7 @@ function processSelected() {
             const errorDiv = document.getElementById('loadError');
             errorDiv.textContent = '❌ ' + error;
             errorDiv.style.display = 'block';
-            
+
             $('#assistant').select2({
               placeholder: 'Failed to load assistants',
               allowClear: true,
@@ -428,12 +428,12 @@ function processSelected() {
           e.preventDefault();
           const assistantSelect = document.getElementById('assistant');
           const cellRange = document.getElementById('cellRange');
-          
+
           if (assistantSelect.disabled) {
             alert('Please wait for assistants to load');
             return;
           }
-          
+
           if (!assistantSelect.value) {
             alert('Please select an assistant');
             return;
@@ -452,8 +452,8 @@ function processSelected() {
 
           document.getElementById('submitBtn').disabled = true;
           document.getElementById('status').innerHTML = '<div id="spinner" class="spinner"></div> Processing cells...';
-          
-          
+
+
           google.script.run
             .withSuccessHandler(function() {
               document.getElementById('submitBtn').disabled = false;
@@ -517,7 +517,7 @@ function fetchAssistants() {
       }
     );
 
-    // Check if response is valid
+    // Check if response is valid.
     if (response.getResponseCode() !== 200) {
       return { error: `API returned ${response.getResponseCode()}` };
     }
@@ -573,6 +573,11 @@ function processWithAssistant(
       const inputValue = row[j];
       const currentRow = selected.getRow() + i;
       const targetCell = sheet.getRange(currentRow, targetColIndex);
+
+      if (!inputValue) {
+        targetCell.setValue("No input value");
+        continue;
+      }
 
       try {
         const payload = {
