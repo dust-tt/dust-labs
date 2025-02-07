@@ -250,6 +250,12 @@ async function processOrphanedPages(assistants: DustAssistant[], softDelete: boo
 
   for await (const page of iteratePaginatedAPI(notion.databases.query, {
     database_id: NOTION_DATABASE_ID ?? '',
+    filter: {
+      property: 'dust.status',
+      select: {
+        equals: 'active'
+      }
+    }
   })) {
     if ('properties' in page) {
       const sIdProp = page.properties['dust.sId'];
