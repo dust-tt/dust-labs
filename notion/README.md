@@ -1,12 +1,13 @@
 # Dust to Notion synchronisation
 
-This script synchronises the list of Dust assistants in a Notion database.
+This script synchronises the list of Dust agents in a Notion database.
 
 ## Installation
 
 1. Ensure you have Node.js (version 14 or higher) and npm installed on your system.
 
 2. Clone this repository:
+
    ```
    git clone git@github.com:dust-tt/dust-labs.git
    cd dust-labs/notion
@@ -40,17 +41,18 @@ Replace the placeholder values with your actual Dust and Notion settings.
 
 To run the script:
 
-*To synchronise the list of Dust assistants in a Notion database:*
+_To synchronise the list of Dust agents in a Notion database:_
+
 ```
 npm run sync-list-of-assistants-to-notion-database
 ```
 
 ## How It Works
 
-1. The script fetches all the assistants in a given Dust workspace.
-2. It fetches 30-day usage data for each assistant, including message count and user reach, integrating this with assistant information for a comprehensive overview.
+1. The script fetches all the agents in a given Dust workspace.
+2. It fetches 30-day usage data for each agent, including message count and user reach, integrating this with agent information for a comprehensive overview.
 3. It configures the Notion database with some predefined properties (see [Notes](#notes) bellow)
-4. It upserts each assistant to the Notion database, using the `dust.name` property as the unique identifier.
+4. It upserts each agent to the Notion database, using the `dust.name` property as the unique identifier.
 
 ## Dependencies
 

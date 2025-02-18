@@ -1,6 +1,6 @@
-# Dust Assistant for Google Sheets
+# Dust Agent for Google Sheets
 
-This Google Apps Script allows you to easily integrate Dust AI assistants with Google Sheets, enabling you to process cell content through Dust assistants directly from your spreadsheet.
+This Google Apps Script allows you to easily integrate Dust AI agents with Google Sheets, enabling you to process cell content through Dust agents directly from your spreadsheet.
 
 ## Installation
 
@@ -29,7 +29,7 @@ Before using the script, you need to configure your Dust credentials:
 1. Select the cells you want to process
 2. Click `Dust > Call an Assistant`
 3. In the sidebar that appears:
-   - Select your Dust assistant
+   - Select your Dust agent
    - Verify the input cell range (or use the "Use Selection" button)
    - Specify the target column where results should appear (e.g., "B")
    - Optionally add specific instructions
@@ -38,7 +38,7 @@ Before using the script, you need to configure your Dust credentials:
 ### Features
 
 - **Batch Processing**: Process multiple cells at once
-- **Custom Instructions**: Add specific instructions for the assistant
+- **Custom Instructions**: Add specific instructions for the agent
 - **Progress Tracking**: Monitor processing progress in real-time
 - **Error Handling**: Clear error messages if something goes wrong
 - **Result Links**: Each processed cell includes a note with a link to view the full conversation on Dust

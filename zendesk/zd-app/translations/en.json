@@ -1,9 +1,9 @@
 {
   "app": {
     "name": "Dust",
-    "short_description": "Integrate Dust AI assistants directly into your Zendesk workflow",
-    "long_description": "# About Dust\n\nDust.tt builds the operating system for smart teams. We believe generative AI can make work better, allowing everyone to use its capabilities without engineering expertise.\n\nMany organizations still struggle with information chaos, hampering their operational excellence. We see a chance to revamp internal collaboration software. Just as the best principles need effective processes, AI-powered software can reshape team collaboration and free up time for high-value work.\n\n---\n\n# Dust AI Assistant for Zendesk\n\nThe Dust AI Assistant app brings the power of your custom Dust AI assistants directly into Zendesk, enhancing your support workflow:\n\n- **Seamless Integration**: Interact with Dust assistants while working on tickets\n- **Context-Aware AI**: Leverages full ticket context, including customer info and conversation history\n- **Intelligent Suggestions**: Provides AI-powered recommendations for ticket resolution\n- **Auto-Generated Responses**: Creates high-quality responses based on your knowledge base and historical data\n- **Efficiency Boost**: Streamlines ticket resolution process and improves support productivity\n\n**Note**: Users must have an active Dust account to use this app within Zendesk.",
-    "installation_instructions": "To install the Dust AI Assistant app:\n\n1. Click the 'Install' button\n2. In the app settings, provide:\n   - Your Dust Workspace ID\n   - Your Dust API Key\n3. (Optional) Specify default assistant IDs to limit available assistants\n4. Save the settings\n5. Refresh your Zendesk agent interface\n\nFor detailed setup instructions, please refer to our [documentation](https://dust.tt/help/zendesk-integration).",
+    "short_description": "Integrate Dust AI agents directly into your Zendesk workflow",
+    "long_description": "# About Dust\n\nDust.tt builds the operating system for smart teams. We believe generative AI can make work better, allowing everyone to use its capabilities without engineering expertise.\n\nMany organizations still struggle with information chaos, hampering their operational excellence. We see a chance to revamp internal collaboration software. Just as the best principles need effective processes, AI-powered software can reshape team collaboration and free up time for high-value work.\n\n---\n\n# Dust AI Agent for Zendesk\n\nThe Dust AI Agent app brings the power of your custom Dust AI agents directly into Zendesk, enhancing your support workflow:\n\n- **Seamless Integration**: Interact with Dust agents while working on tickets\n- **Context-Aware AI**: Leverages full ticket context, including customer info and conversation history\n- **Intelligent Suggestions**: Provides AI-powered recommendations for ticket resolution\n- **Auto-Generated Responses**: Creates high-quality responses based on your knowledge base and historical data\n- **Efficiency Boost**: Streamlines ticket resolution process and improves support productivity\n\n**Note**: Users must have an active Dust account to use this app within Zendesk.",
+    "installation_instructions": "To install the Dust AI Agent app:\n\n1. Click the 'Install' button\n2. In the app settings, provide:\n   - Your Dust Workspace ID\n   - Your Dust API Key\n3. (Optional) Specify default agent IDs to limit available agents\n4. Save the settings\n5. Refresh your Zendesk agent interface\n\nFor detailed setup instructions, please refer to our [documentation](https://dust.tt/help/zendesk-integration).",
     "parameters": {
       "dust_api_key": {
         "label": "Dust API Key",
@@ -14,8 +14,8 @@
         "helpText": "Enter your Dust Workspace ID. This identifies the specific Dust workspace to connect with your Zendesk account."
       },
       "default_assistant_ids": {
-        "label": "Restrict Available Assistants",
-        "helpText": "Optionally add Dust Assistant IDs (one per line) to limit which assistants are available in the app. Leave blank to show all assistants in your workspace."
+        "label": "Restrict Available Agents",
+        "helpText": "Optionally add Dust Agent IDs (one per line) to limit which agents are available in the app. Leave blank to show all agents in your workspace."
       },
       "hide_customer_information": {
         "label": "Hide Customer Information (PII)",

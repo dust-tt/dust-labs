@@ -101,7 +101,7 @@ function getSourceUrlFromReference(reference) {
   } catch (error) {
     hideLoadingSpinner();
     showErrorMessage(
-      error.message || "Failed to load assistants. Please try again later."
+      error.message || "Failed to load agents. Please try again later."
     );
   }
 
@@ -210,7 +210,7 @@ function getSourceUrlFromReference(reference) {
       }
 
       if (assistants.length === 0) {
-        throw new Error("No assistants found");
+        throw new Error("No agents found");
       }
 
       const selectElement = document.getElementById("assistantSelect");
@@ -233,7 +233,7 @@ function getSourceUrlFromReference(reference) {
 
       $(selectElement)
         .select2({
-          placeholder: "Select an assistant",
+          placeholder: "Select an agent",
           allowClear: true,
           templateResult: formatAssistant,
           templateSelection: formatAssistantSelection,
@@ -356,7 +356,7 @@ function getSourceUrlFromReference(reference) {
 
       if (!selectedAssistantId || !selectedAssistantName) {
         throw new Error(
-          "No assistant selected. Please select an assistant before sending a message."
+          "No agent selected. Please select an agent before sending a message."
         );
       }
 

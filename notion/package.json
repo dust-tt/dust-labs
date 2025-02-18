@@ -1,7 +1,7 @@
 {
   "name": "dust-to-notion",
   "version": "0.1.0",
-  "description": "Script to synchronise the list of Dust assistants in Notion",
+  "description": "Script to synchronise the list of Dust agents in Notion",
   "main": "index.ts",
   "scripts": {
     "sync-list-of-assistants-to-notion-database": "tsx sync-list-of-assistants-to-notion-database.ts"
