@@ -5,6 +5,9 @@ This Google Apps Script allows you to easily integrate Dust AI assistants with G
 ## Installation
 
 1. Copy the content of dust-app-script.js
+
+- If your workspace is hosted in the EU (eu.dust.tt), then copy the content of dust-app-script-eu.js
+
 2. Open your Google Spreadsheet
 3. Go to `Extensions > Apps Script`
 4. Delete any existing code in the editor
