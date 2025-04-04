@@ -12,22 +12,28 @@ const JIRA_API_TOKEN = process.env.JIRA_API_TOKEN;
 const JIRA_QUERY = process.env.JIRA_QUERY || DEFAULT_JIRA_QUERY;
 const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
+const DUST_VAULT_ID = process.env.DUST_VAULT_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
 
 const requiredEnvVars = [
-  'JIRA_SUBDOMAIN',
-  'JIRA_EMAIL',
-  'JIRA_API_TOKEN',
-  'DUST_API_KEY',
-  'DUST_WORKSPACE_ID',
-  'DUST_DATASOURCE_ID'
+  "JIRA_SUBDOMAIN",
+  "JIRA_EMAIL",
+  "JIRA_API_TOKEN",
+  "DUST_API_KEY",
+  "DUST_WORKSPACE_ID",
+  "DUST_VAULT_ID",
+  "DUST_DATASOURCE_ID",
 ];
 
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+const missingEnvVars = requiredEnvVars.filter(
+  (varName) => !process.env[varName]
+);
 
 if (missingEnvVars.length > 0) {
   throw new Error(
-    `Please provide values for the following environment variables: ${missingEnvVars.join(', ')}`
+    `Please provide values for the following environment variables: ${missingEnvVars.join(
+      ", "
+    )}`
   );
 }
 
@@ -157,7 +163,9 @@ async function getIssuesUpdatedLast24Hours(): Promise<JiraIssue[]> {
   const maxResults = 50;
   let total = 0;
 
-  const makeRequest = async (retryCount = 0): Promise<AxiosResponse<JiraSearchResponse>> => {
+  const makeRequest = async (
+    retryCount = 0
+  ): Promise<AxiosResponse<JiraSearchResponse>> => {
     try {
       return await jiraApi.post("/search", {
         jql: JIRA_QUERY,
@@ -195,9 +203,14 @@ async function getIssuesUpdatedLast24Hours(): Promise<JiraIssue[]> {
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
         if (error.response.status === 429 && retryCount < 3) {
-          const retryAfter = parseInt(error.response.headers['retry-after'] || '60', 10);
+          const retryAfter = parseInt(
+            error.response.headers["retry-after"] || "60",
+            10
+          );
           console.log(`Rate limited. Retrying after ${retryAfter} seconds...`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          await new Promise((resolve) =>
+            setTimeout(resolve, retryAfter * 1000)
+          );
           return makeRequest(retryCount + 1);
         }
       }
@@ -235,7 +248,7 @@ function formatDescription(
 ): string {
   return (
     description?.content
-      .map((c) => c.content.map((cc) => cc.text).join(""))
+      .map((c) => c.content?.map((cc) => cc.text).join(""))
       .join("\n") || ""
   );
 }
@@ -317,7 +330,7 @@ ${formatComments(issue.fields.comment.comments)}
 
   try {
     await dustApi.post(
-      `/w/${DUST_WORKSPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
+      `/w/${DUST_WORKSPACE_ID}/vaults/${DUST_VAULT_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
       {
         text: content,
       }
@@ -341,13 +354,12 @@ async function main() {
 
     const limiter = new Bottleneck({
       maxConcurrent: DUST_RATE_LIMIT,
-      minTime: 60 * 1000 / DUST_RATE_LIMIT,
+      minTime: (60 * 1000) / DUST_RATE_LIMIT,
     });
 
     const tasks = recentIssues.map((issue) =>
       limiter.schedule(() => upsertToDustDatasource(issue))
     );
-
     await Promise.all(tasks);
     console.log("All issues processed successfully.");
   } catch (error) {
