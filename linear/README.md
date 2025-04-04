@@ -85,6 +85,7 @@ Changed status from "Todo" to "In Progress"
 - npm (Node Package Manager)
 - Linear account with API access
 - Dust account with API access
+- Create a folder and fetch its data source id (starts with dts_)
 
 ## Installation
 
@@ -135,7 +136,7 @@ Changed status from "Todo" to "In Progress"
 To run the script:
 
 ```bash
-npm start
+npm run issues
 ```
 
 The script will:
