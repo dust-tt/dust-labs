@@ -1,0 +1,23 @@
+{
+  "name": "grain-to-dust",
+  "version": "1.0.0",
+  "description": "Script to import Grain transcripts to Dust datasources",
+  "main": "pylon-issues-to-dust.ts",
+  "scripts": {
+    "meetings": "ts-node grain-meetings-to-dust.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "romain@dotfile.com",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "bottleneck": "^2.19.5",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+} 
