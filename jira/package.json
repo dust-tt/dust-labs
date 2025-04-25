@@ -1,10 +1,10 @@
 {
-  "name": "zendesk-to-dust",
+  "name": "jira-to-dust",
   "version": "1.0.0",
   "description": "Script to import Jira issues to Dust datasources",
   "main": "index.ts",
   "scripts": {
-    "issues": "ts-node jira-issues-to-dust.ts",
+    "issues": "tsx jira-issues-to-dust.ts",
     "build": "tsc"
   },
   "keywords": [],
@@ -12,13 +12,14 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.7.7",
-    "bottleneck" :"^2.9.15",
+    "bottleneck": "^2.9.15",
     "dotenv": "^16.0.3",
     "p-limit": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^18.16.3",
     "ts-node": "^10.9.1",
+    "tsx": "^4.19.3",
     "typescript": "^5.0.4"
   }
 }

@@ -37,7 +37,7 @@ if (missingEnvVars.length > 0) {
   );
 }
 
-const DUST_RATE_LIMIT = 120; // requests per minute
+const DUST_RATE_LIMIT = 118; // requests per minute
 
 const jiraApi = axios.create({
   baseURL: `https://${JIRA_SUBDOMAIN}.atlassian.net/rest/api/3`,

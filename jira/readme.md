@@ -61,8 +61,8 @@ This is the first comment of the issue
 
 1. Clone this repository:
    ```bash
-   git git@github.com:dust-tt/dust-labs.git
-   cd zendesk
+   git clone git@github.com:dust-tt/dust-labs.git
+   cd dust-labs/jira
    ```
 
 2. Install dependencies:
@@ -75,23 +75,17 @@ This is the first comment of the issue
 Create a `.env` file in the root directory of the project with the following variables:
 
 ```
-JIRA_SUBDOMAIN=your-jira-subdomain
+JIRA_SUBDOMAIN=your-jira-subdomain # eg dust if your url is https://dust.atlassian.net
 JIRA_EMAIL=your-jira-email
 JIRA_API_TOKEN=your-jira-api-token
 JIRA_QUERY=your-jira-query # optional, default is `updated >= -24h ORDER BY updated DESC`
 DUST_API_KEY=your-dust-api-key
 DUST_WORKSPACE_ID=your-dust-workspace-id
-DUST_DATASOURCE_ID=your-dust-datasource-id
+DUST_DATASOURCE_ID=your-dust-datasource-id # you get it from Company Data > Folders > ... > API
+DUST_VAULT_ID=your-dust-space-id
 ```
 
 Replace the placeholder values with your actual Jira and Dust credentials.
-
-## Configuration
-
-You can adjust the following constants in the script:
-
-- `THREADS_NUMBER`: Number of concurrent requests (default: 5)
-- `ISSUES_UPDATED_SINCE`: Time range for fetching updated issues (default: '24h')
 
 ## Usage
 
@@ -108,7 +102,7 @@ This will execute the `jira-issues-to-dust.ts` script using `ts-node`.
 ### Functionality
 
 1. **Fetching Jira Issues**: 
-   - Retrieves all Jira issues updated within the last 24 hours (or as specified by `ISSUES_UPDATED_SINCE`).
+   - Retrieves all Jira issues updated within the last 24 hours (or as specified by `JIRA_QUERY`).
    - Paginates through results to ensure all issues are fetched.
 
 2. **Processing Issues**:
