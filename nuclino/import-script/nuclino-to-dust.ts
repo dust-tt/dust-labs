@@ -364,7 +364,6 @@ ${article.content}
     }
 
 
-
     private async doThrottledGetRequest(url: string, data?: any) {
         const params = new URLSearchParams();
         if (data?.params) {
@@ -380,20 +379,20 @@ ${article.content}
 
         return this.rateLimiter.schedule(async () => {
             try {
-            const response = await fetch(fullUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${DUST_API_KEY}`,
-                    'Accept': 'application/json'
-                },
-                signal: AbortSignal.timeout(60 * 1000), // <=== HERE
-            });
+                const response = await fetch(fullUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${DUST_API_KEY}`,
+                        'Accept': 'application/json'
+                    },
+                    signal: AbortSignal.timeout(60 * 1000), // <=== HERE
+                });
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
 
-            return await response.json();
+                return await response.json();
             } catch (error) {
                 console.log("error", error);
                 throw error;
@@ -455,8 +454,6 @@ ${article.content}
             return await response.json();
         });
     }
-
-
 
 
     public async getItems(destination: Dustination, limit?: number, offset?: number): Promise<{
@@ -584,6 +581,7 @@ class NuclinoSyncJob {
             case 'collection': {
                 for (const item of nuclinoItem.childIds) {
                     const itemData = await this.nuclino.getItem(item);
+                    // @ts-ignore
                     await this.recursiveSync(itemData, `${breadCrumb}/${itemData.title}`, mode);
 
                 }
@@ -593,7 +591,7 @@ class NuclinoSyncJob {
 
     }
 
-    private async fetchAllDustArticles(): void {
+    private async fetchAllDustArticles(): Promise<void> {
         let response = {total: 0};
         let offset = 0;
         const limit = 200;
@@ -601,7 +599,7 @@ class NuclinoSyncJob {
             response = await this.dust.getItems(this.destination, limit, offset);
 
 
-
+            // @ts-ignore
             for (const document of response.documents) {
                 this.dustArticles.set(document.document_id, document.timestamp);
             }
@@ -622,7 +620,6 @@ class NuclinoSyncJob {
 }
 
 
-
 /**
  * Bootstrap
  */
@@ -637,7 +634,6 @@ const nuclinoLimiter = new Bottleneck({
     minTime: 500, // 400 between requests. per https://help.nuclino.com/b147124e-rate-limiting
     maxConcurrent: 1, // Only 1 request at a time
 });
-
 
 
 /**
@@ -670,10 +666,10 @@ const nuclino = new Nuclino(nuclinoLimiter);
 const dust = new Dust(dustLimiter, DUST_WORKSPACE_ID);
 
 
-
+console.log(process.argv);
 // Run the migration
 if (process.argv.length < 6 || ["sync", "archive", "dryrun"].indexOf(process.argv[5])) {
-    console.error('Usage: npm run import <nuclinoWorkspaceName> <DustSpaceId> <DustDataSourceId> <mode>sync|archive|dryrun</mode>');
+    console.error('Usage: npm run import <nuclinoWorkspaceName> <DustSpaceId> <DustDataSourceId> <mode>sync|archive|dryrun</mode>, or:\nnode <filename> <nuclinoWorkspaceName> <DustSpaceId> <DustDataSourceId> <mode>');
     process.exit(1);
 }
 const job = new NuclinoSyncJob(nuclino, dust, process.argv[2], {spaceId: process.argv[3], sourceId: process.argv[4]});
