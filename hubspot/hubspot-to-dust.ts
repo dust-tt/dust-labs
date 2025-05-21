@@ -15,6 +15,7 @@ const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID;
 const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
+const DUST_VAULT_ID = process.env.DUST_VAULT_ID;
 
 const UPDATED_SINCE_DAYS = 1; // Number of days to look back for updates
 const UPDATED_SINCE = new Date(Date.now() - UPDATED_SINCE_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -45,13 +46,13 @@ const dustApi = axios.create({
 // Bottleneck limiter for HubSpot API
 const hubspotLimiter = new Bottleneck({
   maxConcurrent: 1,
-  minTime: 100 // 1000ms / 10 requests per second
+  minTime: 100 * 1.05 // 1000ms / 10 requests per second minus a 5% margin
 });
 
 // Bottleneck limiter for Dust API
 const dustLimiter = new Bottleneck({
   maxConcurrent: 1,
-  minTime: 500 // 60000ms / 120 requests per minute
+  minTime: 500 / THREADS_NUMBER // 60000ms / 120 requests per minute
 });
 
 interface Company {
@@ -119,26 +120,51 @@ function stripHtmlTags(html: string): string {
   return html.replace(/<[^>]*>/g, '').trim();
 }
 
-
 async function getRecentlyUpdatedCompanyIds(): Promise<string[]> {
+  let allCompanyIds: string[] = [];
+  let after: string | null = null;
+  const PAGE_LIMIT = 100;
+
   try {
-    const response = await hubspotLimiter.schedule(() => hubspotApi.post('/crm/v3/objects/companies/search', {
-      filterGroups: [{
-        filters: [{
-          propertyName: 'hs_lastmodifieddate',
-          operator: 'GTE',
-          value: UPDATED_SINCE
-        }]
-      }],
-      properties: ['hs_object_id'],
-      limit: 100
-    }));
-    return response.data.results.map((company: Company) => company.id);
+    while (true) {
+      const searchBody: any = {
+        filterGroups: [{
+          filters: [{
+            propertyName: 'hs_lastmodifieddate',
+            operator: 'GTE',
+            value: UPDATED_SINCE
+          }]
+        }],
+        properties: ['hs_object_id'],
+        limit: PAGE_LIMIT
+      };
+
+      if (after) {
+        searchBody.after = after;
+      }
+      console.log("call to /crm/v3/objects/companies/search")
+      const response = await hubspotLimiter.schedule(() =>
+        hubspotApi.post('/crm/v3/objects/companies/search', searchBody)
+      );
+
+      const companies = response.data.results;
+      allCompanyIds = allCompanyIds.concat(companies.map((company: Company) => company.id));
+
+      if (!response.data.paging?.next?.after) {
+        break;
+      }
+      after = response.data.paging.next.after;
+    }
+
+    console.log(`Found ${allCompanyIds.length} companies with updates in the last ${UPDATED_SINCE_DAYS} day(s).`);
+    return allCompanyIds;
+
   } catch (error) {
     console.error('Error fetching recently updated company IDs:', error);
     return [];
   }
 }
+
 
 async function getCompanyDetails(companyId: string): Promise<Company | null> {
   try {
@@ -369,7 +395,7 @@ ${props.notes_last_updated ? `Last Note Updated: ${props.notes_last_updated}` : 
   `.trim();
 
   try {
-    await dustLimiter.schedule(() => dustApi.post(`/w/${DUST_WORKSPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`, {
+    await dustLimiter.schedule(() => dustApi.post(`/w/${DUST_WORKSPACE_ID}/vaults/${DUST_VAULT_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`, {
       source_url: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/company/${company.id}`,
       text: content
     }));

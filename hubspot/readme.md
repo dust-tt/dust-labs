@@ -73,6 +73,7 @@ Notes:
    DUST_API_KEY=your_dust_api_key
    DUST_WORKSPACE_ID=your_dust_workspace_id
    DUST_DATASOURCE_ID=your_dust_datasource_id
+   DUST_VAULT_ID=your-dust-space-id
    ```
    Replace the placeholders with your actual credentials.
 
