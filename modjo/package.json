@@ -1,10 +1,10 @@
 {
-  "name": "zendesk-to-dust",
+  "name": "modjo-to-dust",
   "version": "1.0.0",
   "description": "Script to import Modjo transcripts to Dust datasources",
   "main": "index.ts",
   "scripts": {
-    "transcripts": "ts-node modjo-transcripts-to-dust.ts",
+    "transcripts": "tsx modjo-transcripts-to-dust.ts",
     "build": "tsc"
   },
   "keywords": [],
@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.16.3",
-    "ts-node": "^10.9.1",
+    "tsx": "^4.19.3",
     "typescript": "^5.0.4"
   }
 }

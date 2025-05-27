@@ -44,7 +44,7 @@ This command executes the `modjo-transcripts-to-dust.ts` file using `ts-node`.
 
 ## Configuration
 
-- `TRANSCRIPTS_SINCE`: You can set this environment variable to a date string (e.g., "2024-01-01") to fetch transcripts from that date onwards. Set it to `null` to fetch all transcripts.
+- `TRANSCRIPTS_SINCE`: You can set this environment variable to a date string (e.g., "2024-01-01") to fetch transcripts from that date onwards. Set it to `null` to fetch all transcripts. Yesterday by default.
 - `INCLUDE_CONTACT_DETAILS`: Set this environment variable to `false` if you don't want to ingest contact details (ie: email and phone number) in Dust.
 - `INCLUDE_RECORDING_URL`: Set this environment variable to `false` if you don't want to ingest the recording URL in Dust.
 
