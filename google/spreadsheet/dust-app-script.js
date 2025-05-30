@@ -1,14 +1,14 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Dust")
-    .addItem("Call an Assistant", "processSelected")
+    .addItem("Call an Agent", "processSelected")
     .addItem("Setup", "showCredentialsDialog")
     .addToUi();
 }
 
 function showSelectionToast() {
   SpreadsheetApp.getActiveSpreadsheet().toast(
-    'Select your input cells, then click the "Call an Assistant" menu item again',
+    'Select your input cells, then click the "Call an Agent" menu item again',
     "Select Cells",
     -1 // Show indefinitely
   );
@@ -249,11 +249,11 @@ function processSelected() {
     "</style>" +
     '<form id="myForm">' +
     '<div style="margin-bottom: 10px;">' +
-    '<label for="assistant">Assistant:</label><br>' +
-    '<select id="assistant" name="assistant" required disabled>' +
+    '<label for="agent">Agent:</label><br>' +
+    '<select id="agent" name="agent" required disabled>' +
     '<option value=""></option>' +
     "</select>" +
-    '<div id="loadError" class="error">Failed to load assistants</div>' +
+    '<div id="loadError" class="error">Failed to load agents</div>' +
     "</div>" +
     '<div style="margin-bottom: 10px;">' +
     '<label for="cellRange">Input Cells:</label><br>' +
@@ -363,26 +363,26 @@ function processSelected() {
     "}" +
     "$(document).ready(function() {" +
     "onLoad();" +
-    "$('#assistant').select2({" +
-    "placeholder: 'Loading assistants...', " +
+    "$('#agents').select2({" +
+    "placeholder: 'Loading agents...', " +
     "allowClear: true, " +
     "width: '100%', " +
     "language: {" +
     "noResults: function() {" +
-    "return 'No assistants found';" +
+    "return 'No agents found';" +
     "}" +
     "}" +
     "});" +
     "});" +
     "google.script.run" +
     ".withSuccessHandler(function(data) {" +
-    "const select = document.getElementById('assistant');" +
+    "const select = document.getElementById('agent');" +
     "if (data.error) {" +
     "const errorDiv = document.getElementById('loadError');" +
     "errorDiv.textContent = '❌ ' + data.error;" +
     "errorDiv.style.display = 'block';" +
-    "$('#assistant').select2({" +
-    "placeholder: 'Failed to load assistants', " +
+    "$('#agent').select2({" +
+    "placeholder: 'Failed to load agents', " +
     "allowClear: true, " +
     "width: '100%'" +
     "});" +
@@ -392,26 +392,26 @@ function processSelected() {
     "const emptyOption = document.createElement('option');" +
     "emptyOption.value = '';" +
     "select.appendChild(emptyOption);" +
-    "data.assistants.forEach(function(a) {" +
+    "data.agents.forEach(function(a) {" +
     "const option = document.createElement('option');" +
     "option.value = a.id;" +
     "option.textContent = a.name;" +
     "select.appendChild(option);" +
     "});" +
     "select.disabled = false;" +
-    "$('#assistant').select2({" +
-    "placeholder: 'Select an assistant', " +
+    "$('#agent').select2({" +
+    "placeholder: 'Select an agent', " +
     "allowClear: true, " +
     "width: '100%', " +
     "language: {" +
     "noResults: function() {" +
-    "return 'No assistants found';" +
+    "return 'No agents found';" +
     "}" +
     "}" +
     "});" +
-    "if (data.assistants.length === 0) {" +
-    "$('#assistant').select2({" +
-    "placeholder: 'No assistants available', " +
+    "if (data.agents.length === 0) {" +
+    "$('#agents').select2({" +
+    "placeholder: 'No agents available', " +
     "allowClear: true, " +
     "width: '100%'" +
     "});" +
@@ -421,23 +421,23 @@ function processSelected() {
     "const errorDiv = document.getElementById('loadError');" +
     "errorDiv.textContent = '❌ ' + error;" +
     "errorDiv.style.display = 'block';" +
-    "$('#assistant').select2({" +
-    "placeholder: 'Failed to load assistants', " +
+    "$('#agents').select2({" +
+    "placeholder: 'Failed to load agents', " +
     "allowClear: true, " +
     "width: '100%'" +
     "});" +
     "})" +
-    ".fetchAssistants();" +
+    ".fetchAgents();" +
     "document.getElementById('myForm').addEventListener('submit', function(e) {" +
     "e.preventDefault();" +
-    "const assistantSelect = document.getElementById('assistant');" +
+    "const agentSelect = document.getElementById('agent');" +
     "const cellRange = document.getElementById('cellRange');" +
-    "if (assistantSelect.disabled) {" +
-    "alert('Please wait for assistants to load');" +
+    "if (agentSelect.disabled) {" +
+    "alert('Please wait for agents to load');" +
     "return;" +
     "}" +
-    "if (!assistantSelect.value) {" +
-    "alert('Please select an assistant');" +
+    "if (!agentSelect.value) {" +
+    "alert('Please select an agent');" +
     "return;" +
     "}" +
     "if (!cellRange.value) {" +
@@ -469,8 +469,8 @@ function processSelected() {
     "document.getElementById('submitBtn').disabled = false;" +
     "document.getElementById('status').textContent = '❌ Error: ' + error;" +
     "})" +
-    ".processWithAssistant(" +
-    "assistantSelect.value, " +
+    ".processWithAgent(" +
+    "agentSelect.value, " +
     "document.getElementById('instructions').value, " +
     "cellRange.value, " +
     "document.getElementById('targetColumn').value, " +
@@ -497,7 +497,7 @@ function getCurrentSelection() {
   }
 }
 
-function fetchAssistants() {
+function fetchAgents() {
   const docProperties = PropertiesService.getDocumentProperties();
   const token = docProperties.getProperty("dustToken");
   const workspaceId = docProperties.getProperty("workspaceId");
@@ -524,16 +524,16 @@ function fetchAssistants() {
       return { error: "API returned " + response.getResponseCode() };
     }
 
-    const assistants = JSON.parse(
+    const agents = JSON.parse(
       response.getContentText()
     ).agentConfigurations;
 
-    const sortedAssistants = assistants.sort(function (a, b) {
+    const sortedAgents = agents.sort(function (a, b) {
       return a.name.localeCompare(b.name);
     });
 
     return {
-      assistants: sortedAssistants.map(function (a) {
+      agents: sortedAgents.map(function (a) {
         return {
           id: a.sId,
           name: a.name,
@@ -545,8 +545,8 @@ function fetchAssistants() {
   }
 }
 
-function processWithAssistant(
-  assistantId,
+function processWithAgent(
+  agentId,
   instructions,
   rangeA1Notation,
   targetColumn,
@@ -641,7 +641,7 @@ function processWithAssistant(
     const payload = {
       message: {
         content: (instructions || "") + "\n\nInput:\n" + inputContent,
-        mentions: [{ configurationId: assistantId }],
+        mentions: [{ configurationId: agentId }],
         context: {
           username: "gsheet",
           timezone: Session.getScriptTimeZone(),
