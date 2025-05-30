@@ -1,0 +1,23 @@
+{
+  "name": "dropbox-to-dust",
+  "version": "0.1.0",
+  "description": "Script to synchronise Dropbox files (including Paper docs) to Dust datasources",
+  "main": "dropbox-to-dust.ts",
+  "scripts": {
+    "sync": "tsx dropbox-to-dust.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.0.3",
+    "bottleneck": "^2.19.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.4",
+    "tsx": "^4.19.1",
+    "@types/node": "^18.16.3"
+  }
+} 
