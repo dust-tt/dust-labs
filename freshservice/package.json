@@ -1,0 +1,30 @@
+{
+  "name": "freshservice-tickets-to-dust",
+  "version": "1.0.0",
+  "description": "Import Freshservice tickets into Dust",
+  "main": "freshservice-tickets-to-dust.ts",
+  "scripts": {
+    "sync": "tsx freshservice-tickets-to-dust.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bottleneck": "^2.19.5",
+    "dotenv": "^16.3.1",
+    "p-limit": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.2"
+  },
+  "keywords": [
+    "freshservice",
+    "dust",
+    "integration",
+    "tickets"
+  ],
+  "author": "",
+  "license": "MIT"
+} 
