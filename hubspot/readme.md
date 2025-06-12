@@ -1,3 +1,8 @@
+# DEPRECACED
+
+This script is **DEPRECATED** and will not be maintained anymore.
+Please use the [HubSpot native tool](https://docs.dust.tt/docs/hubspot) if you need to interact with HubSpot in Dust.
+
 # HubSpot to Dust Import
 
 This script is designed to import data from HubSpot to Dust datasources. It fetches recently updated companies from HubSpot, along with their associated contacts and deals, and upserts this information into a specified Dust datasource.
@@ -19,7 +24,7 @@ Upserted company 10979757009 to Dust datasource
 [...]
 ```
 
-Example of account summary added to the Dust datasource: 
+Example of account summary added to the Dust datasource:
 
 ```
 Company Summary for Evil Corp
@@ -56,12 +61,14 @@ Notes:
 ## Installation
 
 1. Clone this repository:
+
    ```
    git clone https://github.com/your-username/hubspot-to-dust-import.git
    cd hubspot-to-dust-import
    ```
 
 2. Install dependencies:
+
    ```
    npm install
    ```

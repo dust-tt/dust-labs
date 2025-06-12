@@ -1,3 +1,8 @@
+# DEPRECACED
+
+This script is **DEPRECATED** and will not be maintained anymore.
+Please use the [Salesforce native tool](https://docs.dust.tt/docs/salesforce) if you need to interact with Salesforce in Dust.
+
 # Salesforce to Dust Data Sync
 
 This script is a multi-threaded Node.js application designed to import Salesforce account data into Dust datasources. It fetches recently updated accounts from Salesforce, including related contacts, opportunities, and cases, and then uploads this information to a specified Dust datasource.
