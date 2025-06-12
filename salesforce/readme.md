@@ -1,4 +1,4 @@
-# DEPRECACED
+# DEPRECATION WARNING
 
 This script is **DEPRECATED** and will not be maintained anymore.
 Please use the [Salesforce native tool](https://docs.dust.tt/docs/salesforce) if you need to interact with Salesforce in Dust.

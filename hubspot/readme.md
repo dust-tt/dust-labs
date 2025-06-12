@@ -1,4 +1,4 @@
-# DEPRECACED
+# DEPRECATION WARNING
 
 This script is **DEPRECATED** and will not be maintained anymore.
 Please use the [HubSpot native tool](https://docs.dust.tt/docs/hubspot) if you need to interact with HubSpot in Dust.
