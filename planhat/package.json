@@ -1,10 +1,11 @@
 {
-  "name": "zendesk-to-dust",
+  "name": "planhat-to-dust",
   "version": "1.0.0",
-  "description": "Script to import PagerDuty resources to Dust datasources",
+  "description": "Script to import Planhat resources to Dust datasources",
+  "type": "module",
   "main": "index.ts",
   "scripts": {
-    "schedules": "ts-node pd-schedules-to-dust.ts",
+    "import": "node --loader ts-node/esm planhat-to-dust.ts",
     "build": "tsc"
   },
   "keywords": [],
