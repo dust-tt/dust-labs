@@ -9,11 +9,18 @@ dotenv.config();
 const PLANHAT_API_TOKEN = process.env.PLANHAT_API_TOKEN;
 const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
+const DUST_SPACE_ID = process.env.DUST_SPACE_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
 const LOOKBACK_DAYS = parseInt(process.env.LOOKBACK_DAYS || "7", 10);
-const THREADS_NUMBER = parseInt(process.env.THREADS_NUMBER || "4", 10);
+const THREADS_NUMBER = parseInt(process.env.THREADS_NUMBER || "1", 10);
 
-if (!PLANHAT_API_TOKEN || !DUST_API_KEY || !DUST_WORKSPACE_ID || !DUST_DATASOURCE_ID) {
+if (
+  !PLANHAT_API_TOKEN ||
+  !DUST_API_KEY ||
+  !DUST_WORKSPACE_ID ||
+  !DUST_SPACE_ID ||
+  !DUST_DATASOURCE_ID
+) {
   console.error("Missing required environment variables");
   process.exit(1);
 }
@@ -43,6 +50,18 @@ const dustLimiter = new Bottleneck({
   maxConcurrent: 1,
   minTime: 500 / THREADS_NUMBER,
 });
+
+// NEW: helper to log Planhat API errors on a single line
+function logPlanhatError(resource: string, context: string, error: unknown) {
+  const err = error as any;
+  const status = err?.response?.status ?? "";
+  const statusText = err?.response?.statusText ?? "";
+  const message =
+    err?.response?.data?.message ?? err?.message ?? "Unknown error";
+  console.error(
+    `Planhat API error while fetching ${resource} for ${context}: ${status} ${statusText} - ${message}`
+  );
+}
 
 interface PlanhatCompany {
   _id: string;
@@ -145,73 +164,75 @@ async function fetchCompanies(updatedSince?: Date): Promise<PlanhatCompany[]> {
       params.updatedAfter = updatedSince.toISOString();
     }
 
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get("/companies", { params })
     );
 
     return response.data || [];
   } catch (error) {
-    console.error("Error fetching companies:", error);
+    logPlanhatError("companies", updatedSince?.toISOString() || "all", error);
     throw error;
   }
 }
 
-async function fetchConversations(companyId: string): Promise<PlanhatConversation[]> {
+async function fetchConversations(
+  companyId: string
+): Promise<PlanhatConversation[]> {
   try {
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get(`/conversations`, { params: { companyId } })
     );
     return response.data || [];
   } catch (error) {
-    console.error(`Error fetching conversations for company ${companyId}:`, error);
+    logPlanhatError("conversations", companyId, error);
     return [];
   }
 }
 
 async function fetchEndusers(companyId: string): Promise<PlanhatEnduser[]> {
   try {
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get(`/endusers`, { params: { companyId } })
     );
     return response.data || [];
   } catch (error) {
-    console.error(`Error fetching endusers for company ${companyId}:`, error);
+    logPlanhatError("endusers", companyId, error);
     return [];
   }
 }
 
 async function fetchNPS(companyId: string): Promise<PlanhatNPS[]> {
   try {
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get(`/nps`, { params: { companyId } })
     );
     return response.data || [];
   } catch (error) {
-    console.error(`Error fetching NPS for company ${companyId}:`, error);
+    logPlanhatError("nps", companyId, error);
     return [];
   }
 }
 
 async function fetchProjects(companyId: string): Promise<PlanhatProject[]> {
   try {
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get(`/projects`, { params: { companyId } })
     );
     return response.data || [];
   } catch (error) {
-    console.error(`Error fetching projects for company ${companyId}:`, error);
+    logPlanhatError("projects", companyId, error);
     return [];
   }
 }
 
 async function fetchAssets(companyId: string): Promise<PlanhatAsset[]> {
   try {
-    const response = await planhatLimiter.schedule(() => 
+    const response = await planhatLimiter.schedule(() =>
       planhatApi.get(`/assets`, { params: { companyId } })
     );
     return response.data || [];
   } catch (error) {
-    console.error(`Error fetching assets for company ${companyId}:`, error);
+    logPlanhatError("assets", companyId, error);
     return [];
   }
 }
@@ -253,7 +274,9 @@ Updated: ${company.updatedAt || "N/A"}`,
   };
 }
 
-function buildConversationsSection(conversations: PlanhatConversation[]): DustSection {
+function buildConversationsSection(
+  conversations: PlanhatConversation[]
+): DustSection {
   const sections = conversations.map((conv, index) => ({
     prefix: `conversation_${index + 1}`,
     content: `Subject: ${conv.subject || "N/A"}
@@ -297,9 +320,10 @@ User: ${nps.enduser?.name || "N/A"} (${nps.enduser?.email || "N/A"})`,
     sections: [],
   }));
 
-  const avgScore = npsData.length > 0 
-    ? npsData.reduce((sum, nps) => sum + (nps.score || 0), 0) / npsData.length 
-    : 0;
+  const avgScore =
+    npsData.length > 0
+      ? npsData.reduce((sum, nps) => sum + (nps.score || 0), 0) / npsData.length
+      : 0;
 
   return {
     prefix: "nps",
@@ -358,13 +382,34 @@ function generateTags(company: PlanhatCompany): string[] {
 async function upsertToDust(document: DustDocument): Promise<void> {
   try {
     await dustLimiter.schedule(async () => {
+      const {
+        dataSourceId: _dsId,
+        documentId,
+        timestampMs,
+        parents: _parents, // not supported by API
+        sourceUrl,
+        ...rest
+      } = document;
+
+      const body: Record<string, any> = {
+        ...rest, // includes title, section, tags
+        mime_type: "application/json",
+        ...(timestampMs ? { timestamp: timestampMs } : {}),
+      };
+
+      if (sourceUrl) {
+        body["source_url"] = sourceUrl;
+      }
+
       const response = await dustApi.post(
-        `/w/${DUST_WORKSPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents`,
-        document
+        `/w/${DUST_WORKSPACE_ID}/spaces/${DUST_SPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
+        body
       );
 
       if (response.status !== 200 && response.status !== 201) {
-        throw new Error(`Failed to upsert document: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to upsert document: ${response.status} ${response.statusText}`
+        );
       }
     });
   } catch (error) {
@@ -408,7 +453,9 @@ async function processCompany(company: PlanhatCompany): Promise<void> {
       },
       parents: [],
       tags: generateTags(company),
-      timestampMs: company.updatedAt ? new Date(company.updatedAt).getTime() : Date.now(),
+      timestampMs: company.updatedAt
+        ? new Date(company.updatedAt).getTime()
+        : Date.now(),
     };
 
     // Upsert to Dust
@@ -419,7 +466,9 @@ async function processCompany(company: PlanhatCompany): Promise<void> {
   }
 }
 
-async function processCompaniesBatch(companies: PlanhatCompany[]): Promise<void> {
+async function processCompaniesBatch(
+  companies: PlanhatCompany[]
+): Promise<void> {
   for (const company of companies) {
     await processCompany(company);
   }

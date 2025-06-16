@@ -28,10 +28,11 @@ PLANHAT_API_TOKEN=your_planhat_api_token
 DUST_API_KEY=your_dust_api_key
 DUST_WORKSPACE_ID=your_dust_workspace_id
 DUST_DATASOURCE_ID=your_dust_datasource_id
+DUST_SPACE_ID=your_dust_space_id
 
 # Sync configuration
 LOOKBACK_DAYS=7  # Number of days to look back for updated companies
-THREADS_NUMBER=4  # Number of parallel threads for processing
+THREADS_NUMBER=1  # Number of parallel threads for processing (for Dust API rate limits, better to keep this at 1)
 ```
 
 ## Usage
@@ -54,6 +55,7 @@ npm start
 1. **Fetches updated companies**: The script queries Planhat for all companies updated within the last `LOOKBACK_DAYS` days.
 
 2. **Enriches company data**: For each company, it fetches:
+
    - Conversations
    - End users
    - NPS scores
@@ -61,6 +63,7 @@ npm start
    - Assets
 
 3. **Creates structured documents**: Each company becomes a Dust document with hierarchical sections:
+
    ```
    Company Document
    ├── Basic Information
@@ -110,12 +113,14 @@ Processing company: Tech Solutions Inc (5f4d3a2b1c9d4e0001234568)
 ## Rate Limiting
 
 The script implements rate limiting to respect API limits:
+
 - **Planhat**: 5 requests per second (200ms between requests)
 - **Dust**: Configurable based on thread count
 
 ## Error Handling
 
 - API errors are logged but don't stop the entire sync
+- Failures on individual Planhat resource fetches (e.g. 403 Forbidden on `m_asset`) are logged on a **single line** and the script continues with an empty list for that resource
 - Failed company syncs are reported but other companies continue processing
 - Worker thread errors are caught and logged
 
@@ -136,12 +141,16 @@ The project uses ES modules with TypeScript. The `tsconfig.json` is configured f
 ## Troubleshooting
 
 ### Missing environment variables
+
 Ensure all required environment variables are set in your `.env` file.
 
 ### API rate limits
+
 If you encounter rate limit errors, reduce the `THREADS_NUMBER` or increase the rate limiter delays in the code.
 
 ### Authentication errors
+
 Verify your API tokens are correct and have the necessary permissions:
+
 - Planhat token needs read access to companies, conversations, endusers, NPS, projects, and assets
 - Dust API key needs write access to the specified datasource
