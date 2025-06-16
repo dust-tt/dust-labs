@@ -5,6 +5,9 @@ function convertMarkdownToHtml(markdown, conversationData) {
     return ""; // Return an empty string or handle as needed
   }
 
+  // Clean up leading newlines and whitespace
+  markdown = markdown.replace(/^\s*\n+/, '').trim();
+
   // Store conversation data
   currentConversation = conversationData;
 
@@ -338,6 +341,282 @@ function getSourceUrlFromReference(reference) {
     }
   }
 
+  async function pollConversationEvents(conversationId, uniqueId, dustWorkspaceId, authorization, baseUrl, metadata) {
+    const maxPollingTime = 3 * 60 * 1000; // 3 minutes in milliseconds
+    const pollInterval = 1000; // 1 second for faster updates
+    const startTime = Date.now();
+    
+    let lastEventIndex = -1;
+    let hasContent = false;
+    let currentContent = '';
+    let isCompleted = false;
+    
+    const assistantMessageElement = document.getElementById(`assistant-${uniqueId}`);
+    
+    while (Date.now() - startTime < maxPollingTime && !isCompleted) {
+      try {
+        const eventsUrl = `${baseUrl}/api/v1/w/${dustWorkspaceId}/assistant/conversations/${conversationId}`;
+        const eventsOptions = {
+          url: eventsUrl,
+          type: 'GET',
+          headers: {
+            Authorization: authorization,
+          },
+          secure: isProd,
+        };
+        
+        const eventsResponse = await client.request(eventsOptions);
+        
+        if (eventsResponse && eventsResponse.conversation && eventsResponse.conversation.content) {
+          const messages = eventsResponse.conversation.content;
+          
+          // Look for assistant messages (index 1 and beyond)
+          for (let i = 1; i < messages.length; i++) {
+            const messageGroup = messages[i];
+            if (Array.isArray(messageGroup) && messageGroup.length > 0) {
+              const message = messageGroup[0];
+              
+              if (message.type === 'agent_message') {
+                hasContent = true;
+                const agentName = message.configuration?.name || 'Assistant';
+                
+                // Debug: log the entire message structure
+                console.log('Agent message received:', JSON.stringify(message, null, 2));
+                console.log('Message status:', message.status);
+                
+                // Extract chain of thought if available
+                const chainOfThought = message.chainOfThought || '';
+                
+                // Function to escape HTML and preserve line breaks
+                function formatChainOfThought(text) {
+                  if (!text || !text.trim()) return '';
+                  
+                  // Escape HTML special characters
+                  const escaped = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+                  
+                  return `<div class="chain-of-thought" id="chain-of-thought-${uniqueId}">${escaped}</div>`;
+                }
+                
+                // Function to update chain of thought with smooth transition
+                function updateChainOfThought(text, elementId) {
+                  const existingChainOfThought = document.getElementById(`chain-of-thought-${elementId}`);
+                  
+                  if (!text || !text.trim()) {
+                    if (existingChainOfThought) {
+                      existingChainOfThought.classList.add('fade-out');
+                      setTimeout(() => {
+                        if (existingChainOfThought.parentNode) {
+                          existingChainOfThought.remove();
+                        }
+                      }, 200);
+                    }
+                    return '';
+                  }
+                  
+                  const escaped = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+                  
+                  if (existingChainOfThought) {
+                    // Update existing content
+                    existingChainOfThought.innerHTML = escaped;
+                    if (!existingChainOfThought.classList.contains('visible')) {
+                      setTimeout(() => existingChainOfThought.classList.add('visible'), 10);
+                    }
+                    return ''; // Return empty since element already exists in DOM
+                  } else {
+                    // Create new element and return HTML to insert
+                    return `<div class="chain-of-thought" id="chain-of-thought-${elementId}">${escaped}</div>`;
+                  }
+                }
+                
+                const chainOfThoughtHtml = formatChainOfThought(chainOfThought);
+                
+                // Debug logging for chain of thought
+                if (chainOfThought && chainOfThought.trim()) {
+                  console.log('Chain of thought found:', chainOfThought);
+                  console.log('Chain of thought HTML:', chainOfThoughtHtml);
+                } else {
+                  console.log('No chain of thought found or empty');
+                }
+                
+                // Test: force show chain of thought for debugging (remove this after testing)
+                // const testChainOfThought = message.chainOfThought ? formatChainOfThought('• Testing chain of thought display\n• This should appear immediately') : '';
+                // if (message.chainOfThought) {
+                //   console.log('FORCED TEST: Displaying test chain of thought');
+                // }
+                
+                if (message.status === 'succeeded') {
+                  // Message is complete - hide chain of thought and show final answer
+                  isCompleted = true;
+                  const htmlAnswer = convertMarkdownToHtml(message.content, eventsResponse.conversation);
+                  if (assistantMessageElement) {
+                    // Hide any existing chain of thought
+                    const existingChainOfThought = document.getElementById(`chain-of-thought-${uniqueId}`);
+                    if (existingChainOfThought) {
+                      existingChainOfThought.classList.add('fade-out');
+                      setTimeout(() => {
+                        if (existingChainOfThought.parentNode) {
+                          existingChainOfThought.remove();
+                        }
+                      }, 200);
+                    }
+                    
+                    setTimeout(() => {
+                      assistantMessageElement.innerHTML = `
+                        <h4>@${agentName}:</h4>
+                        <pre class=\"markdown-content\">${htmlAnswer}</pre>
+                        <button class=\"use-button public-reply\" onclick=\"useAnswer(this, 'public')\">Use as public reply</button>
+                        <button class=\"use-button private-note\" onclick=\"useAnswer(this, 'private')\">Use as internal note</button>
+                      `;
+                    }, 200);
+                  }
+                } else if (message.status === 'created' || (message.status === 'running' && !message.content)) {
+                  // Message is just created or running but no content yet
+                  if (assistantMessageElement) {
+                    let chainOfThoughtElement = document.getElementById(`chain-of-thought-${uniqueId}`);
+                    
+                    // Handle chain of thought display
+                    if (chainOfThought && chainOfThought.trim()) {
+                      const escaped = chainOfThought
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                      
+                      if (!chainOfThoughtElement) {
+                        // Create chain of thought element
+                        assistantMessageElement.innerHTML = `
+                          <h4>@${agentName}:</h4>
+                          <div class="chain-of-thought" id="chain-of-thought-${uniqueId}">${escaped}</div>
+                          <div class=\"spinner\"></div>
+                          <div class=\"generating-status\">Generating response...</div>
+                        `;
+                        
+                        // Trigger animation after DOM update
+                        setTimeout(() => {
+                          const element = document.getElementById(`chain-of-thought-${uniqueId}`);
+                          if (element) {
+                            element.classList.add('visible');
+                          }
+                        }, 50);
+                      } else {
+                        // Update existing chain of thought content
+                        chainOfThoughtElement.innerHTML = escaped;
+                        // Auto-scroll to bottom of chain of thought
+                        chainOfThoughtElement.scrollTop = chainOfThoughtElement.scrollHeight;
+                      }
+                    } else {
+                      // No chain of thought - just show spinner
+                      if (!chainOfThoughtElement) {
+                        assistantMessageElement.innerHTML = `
+                          <h4>@${agentName}:</h4>
+                          <div class=\"spinner\"></div>
+                          <div class=\"generating-status\">Generating response...</div>
+                        `;
+                      }
+                    }
+                  }
+                } else if (message.status === 'running' && message.content) {
+                  // Message is still generating but has partial content
+                  const htmlAnswer = convertMarkdownToHtml(message.content, eventsResponse.conversation);
+                  if (assistantMessageElement) {
+                    let chainOfThoughtElement = document.getElementById(`chain-of-thought-${uniqueId}`);
+                    
+                    // Handle chain of thought display
+                    if (chainOfThought && chainOfThought.trim()) {
+                      const escaped = chainOfThought
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                      
+                      if (!chainOfThoughtElement) {
+                        // Create chain of thought element
+                        assistantMessageElement.innerHTML = `
+                          <h4>@${agentName}:</h4>
+                          <div class="chain-of-thought" id="chain-of-thought-${uniqueId}">${escaped}</div>
+                          <pre class=\"markdown-content\">${htmlAnswer}</pre>
+                          <div class=\"spinner\"></div>
+                          <div class=\"generating-status\">Generating response...</div>
+                        `;
+                        
+                        // Trigger animation after DOM update
+                        setTimeout(() => {
+                          const element = document.getElementById(`chain-of-thought-${uniqueId}`);
+                          if (element) {
+                            element.classList.add('visible');
+                          }
+                        }, 50);
+                      } else {
+                        // Update existing chain of thought content
+                        chainOfThoughtElement.innerHTML = escaped;
+                        // Auto-scroll to bottom of chain of thought
+                        chainOfThoughtElement.scrollTop = chainOfThoughtElement.scrollHeight;
+                      }
+                    } else {
+                      // No chain of thought - just show content and spinner
+                      if (!chainOfThoughtElement) {
+                        assistantMessageElement.innerHTML = `
+                          <h4>@${agentName}:</h4>
+                          <pre class=\"markdown-content\">${htmlAnswer}</pre>
+                          <div class=\"spinner\"></div>
+                          <div class=\"generating-status\">Generating response...</div>
+                        `;
+                      }
+                    }
+                  }
+                } else if (message.status === 'errored') {
+                  // Message failed
+                  isCompleted = true;
+                  if (assistantMessageElement) {
+                    assistantMessageElement.innerHTML = `
+                      <h4>Error:</h4>
+                      <pre>Failed to generate response. Please try again.</pre>
+                    `;
+                  }
+                }
+                break; // Only process the first agent message
+              }
+            }
+          }
+        }
+        
+        document.getElementById('dustResponse').scrollTop = document.getElementById('dustResponse').scrollHeight;
+        
+        if (!isCompleted) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+        
+      } catch (error) {
+        console.error('Error polling conversation events:', error);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+    
+    // If we timed out, show error message
+    if (!isCompleted && Date.now() - startTime >= maxPollingTime) {
+      if (assistantMessageElement) {
+        assistantMessageElement.innerHTML = `
+          <h4>Error:</h4>
+          <pre>Request timed out after 3 minutes. The assistant may still be processing your request.</pre>
+        `;
+      }
+    }
+    
+    await client.invoke("resize", { width: "100%", height: "600px" });
+  }
+
   async function sendTicketToDust(ticket) {
     const dustResponse = document.getElementById("dustResponse");
     const userInput = document.getElementById("userInput");
@@ -529,7 +808,7 @@ function getSourceUrlFromReference(reference) {
         },
         title: `Zendesk Ticket #${ticketInfo.id} - ${ticketInfo.customerName}`,
         visibility: "unlisted",
-        blocking: true,
+        blocking: false,
         skipToolsValidation: true,
       };
 
@@ -546,25 +825,15 @@ function getSourceUrlFromReference(reference) {
 
       const response = await client.request(options);
 
-      const answer = response.conversation.content[1][0];
-      const answerAgent = answer.configuration.name;
-      const answerMessage = answer.content;
-
-      const assistantMessageElement = document.getElementById(
-        `assistant-${uniqueId}`
+      // Start polling for the conversation result
+      await pollConversationEvents(
+        response.conversation.sId,
+        uniqueId,
+        dustWorkspaceId,
+        authorization,
+        baseUrl,
+        metadata
       );
-      if (assistantMessageElement) {
-        const htmlAnswer = convertMarkdownToHtml(
-          answerMessage,
-          response.conversation
-        );
-        assistantMessageElement.innerHTML = `
-          <h4>@${answerAgent}:</h4>
-          <pre class="markdown-content">${htmlAnswer}</pre>
-          <button class="use-button public-reply" onclick="useAnswer(this, 'public')">Use as public reply</button>
-          <button class="use-button private-note" onclick="useAnswer(this, 'private')">Use as internal note</button>
-        `;
-      }
 
       dustResponse.scrollTop = dustResponse.scrollHeight;
 
