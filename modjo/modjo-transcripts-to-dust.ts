@@ -10,8 +10,9 @@ const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
 const DUST_VAULT_ID = process.env.DUST_VAULT_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
-const INCLUDE_CONTACT_DETAILS = process.env.INCLUDE_CONTACT_DETAILS !== 'false';
-const INCLUDE_RECORDING_URL = process.env.INCLUDE_RECORDING_URL !== 'false';
+const DUST_REGION = process.env.DUST_REGION || "US";
+const INCLUDE_CONTACT_DETAILS = process.env.INCLUDE_CONTACT_DETAILS !== "false";
+const INCLUDE_RECORDING_URL = process.env.INCLUDE_RECORDING_URL !== "false";
 
 if (
   !MODJO_API_KEY ||
@@ -26,8 +27,11 @@ if (
 }
 
 // Can be `null` if you want to fetch all transcripts
-const YESTERDAY = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-const TRANSCRIPTS_SINCE = process.env.TRANSCRIPTS_SINCE === "null" ? null : (process.env.TRANSCRIPTS_SINCE || YESTERDAY);
+const YESTERDAY = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+const TRANSCRIPTS_SINCE =
+  process.env.TRANSCRIPTS_SINCE === "null"
+    ? null
+    : process.env.TRANSCRIPTS_SINCE || YESTERDAY;
 
 const modjoApi = axios.create({
   baseURL: MODJO_BASE_URL,
@@ -40,7 +44,10 @@ const modjoApi = axios.create({
 });
 
 const dustApi = axios.create({
-  baseURL: "https://dust.tt/api/v1",
+  baseURL:
+    DUST_REGION === "EU"
+      ? "https://eu.dust.tt/api/v1"
+      : "https://dust.tt/api/v1",
   headers: {
     Authorization: `Bearer ${DUST_API_KEY}`,
     "Content-Type": "application/json",
@@ -99,8 +106,8 @@ async function getModjoTranscripts(): Promise<ModjoCallExport[]> {
 
   console.log(
     `Will retrieve all transcripts since: ${TRANSCRIPTS_SINCE}\n` +
-    `Will include contact details: ${INCLUDE_CONTACT_DETAILS}\n` +
-    `Will include recording URLs: ${INCLUDE_RECORDING_URL}`
+      `Will include contact details: ${INCLUDE_CONTACT_DETAILS}\n` +
+      `Will include recording URLs: ${INCLUDE_RECORDING_URL}`
   );
 
   do {
@@ -153,7 +160,9 @@ async function upsertToDustDatasource(transcript: ModjoCallExport) {
   const documentId = `modjo-transcript-${transcript.callId}`;
 
   let content = `Call ID: ${transcript.callId}\n`;
-  content += `Tags: ${transcript.relations.tags.map(tag => `"${tag.name}"`).join(', ') }\n`;
+  content += `Tags: ${transcript.relations.tags
+    .map((tag) => `"${tag.name}"`)
+    .join(", ")}\n`;
   content += `Title: ${transcript.title}\n`;
   content += `Date: ${transcript.startDate}\n`;
   content += `Duration: ${transcript.duration} seconds\n`;
@@ -162,7 +171,6 @@ async function upsertToDustDatasource(transcript: ModjoCallExport) {
   if (transcript.callCrmId) content += `CRM ID: ${transcript.callCrmId}\n`;
   if (INCLUDE_RECORDING_URL && transcript.relations.recording)
     content += `Recording URL: ${transcript.relations.recording.url}\n`;
-
 
   content += "\n# Speakers\n";
   transcript.relations.speakers.forEach((speaker) => {

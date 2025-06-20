@@ -18,6 +18,7 @@ This script imports Modjo call transcripts into a Dust datasource. It fetches tr
    ```
 
 3. Create a `.env` file in the root directory with the following content:
+
    ```
    MODJO_BASE_URL=https://api.modjo.ai
    MODJO_API_KEY=your_modjo_api_key
@@ -26,10 +27,12 @@ This script imports Modjo call transcripts into a Dust datasource. It fetches tr
    DUST_VAULT_ID=your_dust_vault_id
    DUST_DATASOURCE_ID=your_dust_datasource_id
 
+   # DUST_REGION=US # or "EU" to use the European Dust instance
    # TRANSCRIPTS_SINCE=YYYY-MM-DD # or "null" if you want to fetch all transcripts
    # INCLUDE_CONTACT_DETAILS=true # or "false" to skip contact details
    # INCLUDE_RECORDING_URL=true # or "false" if you don't want the recording URL to appear in Dust
    ```
+
    Replace the placeholder values with your actual API keys and IDs.
 
 ## Usage
@@ -44,6 +47,7 @@ This command executes the `modjo-transcripts-to-dust.ts` file using `ts-node`.
 
 ## Configuration
 
+- `DUST_REGION`: Set this environment variable to `EU` to use the European Dust instance (https://eu.dust.tt). Defaults to `US` (https://dust.tt) if not specified.
 - `TRANSCRIPTS_SINCE`: You can set this environment variable to a date string (e.g., "2024-01-01") to fetch transcripts from that date onwards. Set it to `null` to fetch all transcripts.
 - `INCLUDE_CONTACT_DETAILS`: Set this environment variable to `false` if you don't want to ingest contact details (ie: email and phone number) in Dust.
 - `INCLUDE_RECORDING_URL`: Set this environment variable to `false` if you don't want to ingest the recording URL in Dust.
