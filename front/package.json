@@ -11,7 +11,9 @@
     "axios": "^1.6.0",
     "bottleneck": "^2.19.5",
     "dotenv": "^16.3.1",
-    "p-limit": "^4.0.0"
+    "front-sdk": "^0.8.2",
+    "p-limit": "^4.0.0",
+    "talonjs": "^1.0.28"
   },
   "devDependencies": {
     "@types/node": "^20.8.0",

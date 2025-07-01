@@ -50,15 +50,27 @@ npm run sync
 
 ## Filtering Options
 
+### Inbox Filtering
 The `FRONT_FILTER` environment variable supports inbox filtering only. This allows you to import conversations from a specific Front inbox.
 
-### Inbox filtering:
 ```env
 FRONT_FILTER=inbox=inb_123  # Conversations from specific inbox ID (API format)
 FRONT_FILTER=inbox=30231326 # Conversations from specific inbox (URL ID - auto-converted)
 ```
 
 **Note**: If no `FRONT_FILTER` is specified, the script will process all available inboxes.
+
+### Time Filtering
+Enable time-based filtering to only process recent conversations and reduce processing time:
+
+```env
+DAYS_BACK=30               # Process conversations from last 30 days (set to 0 to disable)
+```
+
+**How it works:**
+- Sorts conversations by `updated_at` (most recent first)
+- Sorts messages and comments by `created_at` (most recent first)  
+- Filters out conversations updated before the cutoff date
 
 ## How it Works
 

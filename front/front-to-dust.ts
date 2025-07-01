@@ -1,6 +1,15 @@
-import axios, { AxiosResponse } from "axios";
+import axios from "axios";
 import * as dotenv from "dotenv";
 import Bottleneck from "bottleneck";
+import * as talon from "talonjs";
+import { Front } from "front-sdk";
+import type { 
+  Inbox, 
+  Conversation, 
+  Message,
+  Conversations,
+  ConversationMessages
+} from "front-sdk";
 
 dotenv.config();
 
@@ -36,15 +45,11 @@ const FRONT_TPM = parseInt(process.env.FRONT_RATE_LIMIT || '50');
 const FRONT_MAX_CONCURRENT = parseInt(process.env.FRONT_MAX_CONCURRENT || '2');
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50');
 
-const frontApi = axios.create({
-  baseURL: "https://api2.frontapp.com",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${FRONT_API_TOKEN}`,
-  },
-  maxContentLength: Infinity,
-  maxBodyLength: Infinity,
-});
+// Time filtering configuration
+const DAYS_BACK = parseInt(process.env.DAYS_BACK || '30'); // Default to 30 days back
+const cutoffTimestamp = Math.floor((Date.now() - (DAYS_BACK * 24 * 60 * 60 * 1000)) / 1000);
+
+const front = new Front(FRONT_API_TOKEN!);
 
 const dustApi = axios.create({
   baseURL: DUST_BASE_URL,
@@ -56,167 +61,14 @@ const dustApi = axios.create({
   maxBodyLength: Infinity,
 });
 
-interface FrontInbox {
-  id: string;
-  name: string;
-  type: string;
-  is_private: boolean;
-  created_at: number;
-  updated_at: number;
-}
-
-interface FrontConversation {
-  id: string;
-  subject: string;
-  status: string;
-  assignee: {
-    id: string;
-    name: string;
-    email: string;
-  } | null;
-  recipient: {
-    handle: string;
-    role: string;
-  };
-  tags: Array<{
-    id: string;
-    name: string;
-  }>;
-  links: {
-    events: string;
-    messages: string;
-    comments: string;
-    drafts: string;
-  };
-  created_at: number;
-  updated_at: number;
-  is_private: boolean;
-  scheduled_reminders: any[];
-  metadata: {
-    is_first_message_outbound: boolean;
-    first_message_timestamp: number;
-    last_message_timestamp: number;
-    customer_last_reply: number;
-    customer_last_reply_at: number;
-    sent_count: number;
-    received_count: number;
-  };
-}
-
-interface FrontConversationsResponse {
-  _pagination: {
-    next: string | null;
-    prev: string | null;
-  };
-  _links: {
-    self: string;
-    next: string | null;
-    prev: string | null;
-  };
-  _results: FrontConversation[];
-}
-
-interface FrontInboxesResponse {
-  _pagination: {
-    next: string | null;
-    prev: string | null;
-  };
-  _links: {
-    self: string;
-    next: string | null;
-    prev: string | null;
-  };
-  _results: FrontInbox[];
-}
-
-interface FrontMessage {
-  id: string;
-  type: string;
-  created_at: number;
-  updated_at: number;
-  is_inbound: boolean;
-  is_draft: boolean;
-  is_archived: boolean;
-  is_trashed: boolean;
-  text: string;
-  html: string;
-  subject: string;
-  blurb: string;
-  author?: {
-    id: string;
-    name: string;
-    email: string;
-    username: string;
-  };
-  recipients: Array<{
-    name: string;
-    handle: string;
-    role: string;
-  }>;
-  attachments: Array<{
-    id: string;
-    name: string;
-    size: number;
-    content_type: string;
-    url: string;
-  }>;
-  metadata: {
-    headers: Record<string, string>;
-    is_auto_reply: boolean;
-    is_bounce: boolean;
-    thread_refs: string[];
-  };
-  conversation_id: string;
-  conversation?: {
-    id: string;
-    subject: string;
-    status: string;
-    assignee: {
-      id: string;
-      name: string;
-      email: string;
-    } | null;
-    recipient: {
-      handle: string;
-      role: string;
-    };
-    tags: Array<{
-      id: string;
-      name: string;
-    }>;
-    links: {
-      events: string;
-      messages: string;
-      comments: string;
-      drafts: string;
-    };
-    created_at: number;
-    updated_at: number;
-    is_private: boolean;
-    scheduled_reminders: any[];
-    metadata: {
-      is_first_message_outbound: boolean;
-      first_message_timestamp: number;
-      last_message_timestamp: number;
-      customer_last_reply: number;
-      customer_last_reply_at: number;
-      sent_count: number;
-      received_count: number;
-    };
-  };
-}
-
-interface FrontMessagesResponse {
-  _pagination: {
-    next: string | null;
-    prev: string | null;
-  };
-  _links: {
-    self: string;
-    next: string | null;
-    prev: string | null;
-  };
-  _results: FrontMessage[];
+interface TimelineEntry {
+  timestamp: Date;
+  type: "RECEIVED" | "SENT";
+  sender: string;
+  recipients: string[];
+  subject?: string;
+  content: string;
+  attachments: string[];
 }
 
 interface RateLimitInfo {
@@ -233,14 +85,11 @@ interface Section {
 
 let currentRateLimit: RateLimitInfo | null = null;
 
-// Function to convert URL inbox ID to API inbox ID
 function convertUrlInboxIdToApiId(urlId: string): string {
-  // If it already has the inb_ prefix, return as is
   if (urlId.startsWith('inb_')) {
     return urlId;
   }
   
-  // Convert decimal to base-36
   const decimalId = parseInt(urlId, 10);
   if (isNaN(decimalId)) {
     throw new Error(`Invalid inbox ID format: ${urlId}. Expected decimal number or inb_ prefixed ID.`);
@@ -248,28 +97,6 @@ function convertUrlInboxIdToApiId(urlId: string): string {
   
   const base36Id = decimalId.toString(36);
   return `inb_${base36Id}`;
-}
-
-function updateRateLimitInfo(response: any) {
-  const limit = response.headers['x-ratelimit-limit'];
-  const remaining = response.headers['x-ratelimit-remaining'];
-  const reset = response.headers['x-ratelimit-reset'];
-  
-  if (limit && remaining && reset) {
-    currentRateLimit = {
-      limit: parseInt(limit),
-      remaining: parseInt(remaining),
-      reset: parseInt(reset)
-    };
-    
-    const resetDate = new Date(currentRateLimit.reset * 1000);
-    console.log(`📊 Rate Limit: ${currentRateLimit.remaining}/${currentRateLimit.limit} requests remaining, resets at ${resetDate.toISOString()}`);
-    
-    // Warn if we're getting close to the limit
-    if (currentRateLimit.remaining < 10) {
-      console.warn(`⚠️  Rate limit warning: Only ${currentRateLimit.remaining} requests remaining!`);
-    }
-  }
 }
 
 function safeTimestampToISO(timestamp: number | undefined | null): string {
@@ -285,85 +112,33 @@ function safeTimestampToISO(timestamp: number | undefined | null): string {
   }
 }
 
-async function upsertConversationToDust(conversation: FrontConversation, messages: FrontMessage[]) {
+function safeTimestampToDate(timestamp: number | undefined | null): Date {
+  if (!timestamp || timestamp <= 0 || isNaN(timestamp)) {
+    return new Date(); // Fallback to current time
+  }
+  
+  try {
+    return new Date(timestamp * 1000);
+  } catch (error) {
+    console.warn(`Invalid timestamp ${timestamp}, using current time`);
+    return new Date();
+  }
+}
+
+async function upsertConversationToDust(conversation: Conversation, messages: Message[]) {
   const conversationId = conversation.id;
   const documentId = `front-conversation-${conversationId}`;
   
-  // Build conversation summary section
-  const conversationSummarySection: Section = {
-    prefix: "Conversation Summary",
-    content: null,
-    sections: [
-      {
-        prefix: "Details",
-        content: [
-          `Subject: ${conversation.subject || 'No Subject'}`,
-          `Status: ${conversation.status}`,
-          `Assignee: ${conversation.assignee?.name || 'Unassigned'} <${conversation.assignee?.email || 'no-email'}>`,
-          `Created: ${safeTimestampToISO(conversation.created_at)}`,
-          `Updated: ${safeTimestampToISO(conversation.updated_at)}`,
-          `Message Count: ${messages.length}`
-        ].join('\n'),
-        sections: []
-      }
-    ]
-  };
-
-  // Build message sections with size limits
-  const MAX_TOTAL_LENGTH = 2 * 1024 * 1024; // 2MB
+  const timeline = createTimelineFromMessages(messages);
+  let llmContent = timelineToLLMFormat(timeline);
   
-  const messageSections: Section[] = [];
-  let totalLength = 0;
-  
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    
-    const messageInfo = [
-      `From: ${message.author?.name || 'Unknown'} <${message.author?.email || 'no-email'}>`,
-      `Date: ${safeTimestampToISO(message.created_at)}`,
-      `Direction: ${message.is_inbound ? 'Inbound' : 'Outbound'}`,
-      `Message ID: ${message.id}`
-    ].join('\n');
-    
-    const messageText = message.text || '';
-    const messageContent = `${messageInfo}\n\n${messageText}`;
-    
-    // Check if adding this message would exceed the size limit
-    if (totalLength + messageContent.length > MAX_TOTAL_LENGTH) {
-      const remainingMessages = messages.length - i;
-      messageSections.push({
-        prefix: `... and ${remainingMessages} more messages (truncated due to size limit)`,
-        content: null,
-        sections: []
-      });
-      break;
-    }
-    
-    // Determine the prefix based on message position
-    let prefix: string;
-    if (i === 0) {
-      prefix = "Original Message";
-    } else {
-      prefix = `Reply ${i}`;
-    }
-    
-    messageSections.push({
-      prefix: prefix,
-      content: messageContent,
-      sections: []
-    });
-    
-    totalLength += messageContent.length;
+  // Apply size limits (2MB)
+  const MAX_TOTAL_LENGTH = 2 * 1024 * 1024;
+  if (llmContent.length > MAX_TOTAL_LENGTH) {
+    llmContent = llmContent.substring(0, MAX_TOTAL_LENGTH - 200) + 
+      "\n\n[CONTENT TRUNCATED DUE TO SIZE LIMIT - SOME MESSAGES MAY BE MISSING]";
   }
 
-  // Create the main conversation thread section
-  const conversationThreadSection: Section = {
-    prefix: "Conversation Thread",
-    content: `Front conversation with ${messages.length} messages`,
-    sections: messageSections
-  };
-
-  // Build tags array
   const tags: string[] = [
     `source:front`,
     `type:conversation`,
@@ -371,7 +146,6 @@ async function upsertConversationToDust(conversation: FrontConversation, message
     `status:${conversation.status}`,
     `message_count:${messages.length}`,
     `created_at:${safeTimestampToISO(conversation.created_at)}`,
-    `updated_at:${safeTimestampToISO(conversation.updated_at)}`,
   ];
 
   if (conversation.assignee?.email) {
@@ -382,201 +156,259 @@ async function upsertConversationToDust(conversation: FrontConversation, message
     tags.push(`subject:${conversation.subject}`);
   }
 
-  // Create the main section structure
   const section: Section = {
     prefix: conversation.subject || `Conversation ${conversationId}`,
-    content: `Front conversation with ${messages.length} messages`,
-    sections: [conversationSummarySection, conversationThreadSection]
+    content: llmContent,
+    sections: []
   };
 
   try {
-    const response = await dustApi.post(
+    await dustApi.post(
       `/w/${DUST_WORKSPACE_ID}/spaces/${DUST_SPACE_ID}/data_sources/${DUST_DATASOURCE_ID}/documents/${documentId}`,
       {
         section: section,
         title: `${conversation.subject || 'No Subject'}: ${messages.length} messages`,
+        tags: tags,
       }
     );
-    
-    updateRateLimitInfo(response);
-    
-    console.log(`✅ Uploaded conversation ${conversationId} with ${messages.length} messages`);
+        
+    console.log(`Uploaded conversation ${conversationId} with ${messages.length} messages`);
   } catch (error: any) {
-    console.error(`❌ Error uploading conversation ${conversationId}:`, error.message);
-    if (error.response) {
-      console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
-    }
+    console.error(`Error uploading conversation ${conversationId}:`, error.message);
     throw error;
   }
 }
 
-async function getAllInboxes(): Promise<FrontInbox[]> {
-  let allInboxes: FrontInbox[] = [];
-  let nextPage: string | null = null;
-
+async function getAllInboxes(): Promise<Inbox[]> {
   try {
-    do {
-      const url = nextPage || "/inboxes";
-      console.log(`Fetching inboxes from: ${url}`);
-      
-      const response = await frontApi.get(url);
-      
-      // Monitor rate limits
-      updateRateLimitInfo(response);
-      
-      const data: FrontInboxesResponse = response.data;
-      
-      allInboxes = allInboxes.concat(data._results);
-      console.log(`Fetched ${data._results.length} inboxes (total: ${allInboxes.length})`);
-      
-      nextPage = data._pagination.next;
-      if (nextPage) {
-        const urlObj = new URL(nextPage);
-        nextPage = urlObj.pathname + urlObj.search;
-      }
-    } while (nextPage);
+    console.log("Fetching inboxes...");
+    const inboxes: Inbox[] = [];
 
-    console.log(`Total inboxes fetched: ${allInboxes.length}`);
-    return allInboxes;
-  } catch (error: any) {
-    console.error("Error fetching inboxes from Front:", error.message);
-    if (error.response) {
-      console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
+    let nextPageUrl: string | null = null;
+    while (true) {
+      const response = await front.inbox.list();
+      inboxes.push(...response._results);
+      nextPageUrl = response._pagination?.next ?? null;
+      if (!nextPageUrl) {
+        break;
+      }
     }
+    console.log(`Found ${inboxes.length} inboxes`);
+    return inboxes;
+  } catch (error: any) {
+    console.error("Error fetching inboxes:", error.message);
     throw error;
   }
 }
 
-async function getConversationsForInbox(inboxId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ conversations: FrontConversation[], nextPage: string | null }> {
-  const makeRequest = async (
-    url: string,
-    retryCount = 0
-  ): Promise<AxiosResponse<FrontConversationsResponse>> => {
+async function getConversationsForInbox(inboxId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ conversations: Conversation[], nextPage: string | null, hasMoreRecent: boolean }> {
+  const makeRequest = async (retryCount = 0): Promise<Conversations> => {
     try {
-      const params: Record<string, any> = {
+      const params: any = { 
+        inbox_id: inboxId,
         limit,
+        page_token: nextPageUrl ? new URL(nextPageUrl).searchParams.get('page_token') : null,
       };
-
-      console.log(`🌐 Making request to: ${url} with params:`, params);
-      const response = await frontApi.get(url, { params });
       
-      // Monitor rate limits
-      updateRateLimitInfo(response);
-      
-      // Debug: Show what we actually got back
-      console.log(`📊 Response: ${response.data._results.length} conversations returned`);
-      if (response.data._results.length > 0) {
-        const firstConv = response.data._results[0];
-        console.log(`📋 Sample conversation: ${firstConv.subject} (status: ${firstConv.status}, created: ${new Date(firstConv.created_at * 1000).toISOString()})`);
-      }
-      
-      return response;
+      return await front.inbox.listConversations(params);
     } catch (error: any) {
-      if (error.response?.status === 429 && retryCount < 3) {
+      if (error.message?.includes('429') && retryCount < 3) {
         console.log(`Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        return makeRequest(url, retryCount + 1);
+        return makeRequest(retryCount + 1);
       }
       throw error;
     }
   };
 
   try {
-    const url = nextPageUrl || `/inboxes/${inboxId}/conversations`;
-    console.log(`Fetching conversations from: ${url}`);
+    const data = await makeRequest();
     
-    const response = await makeRequest(url);
-    const data = response.data;
+    let filteredConversations = data._results;
+    let hasMoreRecent = true;
+
+    const beforeFilter = filteredConversations.length;
+    filteredConversations = filteredConversations.filter(conv => {
+      if (!conv.created_at || conv.created_at <= 0 || isNaN(conv.created_at)) {
+        console.warn(`Invalid created_at timestamp for conversation ${conv.id}: ${conv.created_at}`);
+        return false;
+      }
+      return conv.created_at >= cutoffTimestamp;
+    });
     
-    console.log(`Fetched ${data._results.length} conversations for inbox ${inboxId}`);
+    const afterFilter = filteredConversations.length;
+    
+    if (beforeFilter > afterFilter) {
+      const oldestFiltered = data._results[data._results.length - 1];
+      if (oldestFiltered && oldestFiltered.created_at < cutoffTimestamp) {
+        hasMoreRecent = false;
+        console.log(`Found conversations older than ${DAYS_BACK} days, stopping pagination`);
+      }
+    }
     
     return {
-      conversations: data._results,
-      nextPage: data._pagination.next
+      conversations: filteredConversations,
+      nextPage: data._pagination?.next ?? null,
+      hasMoreRecent
     };
   } catch (error: any) {
     console.error(`Error fetching conversations for inbox ${inboxId}:`, error.message);
-    if (error.response) {
-      console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
-    }
     throw error;
   }
 }
 
-async function getMessagesForConversation(conversationId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ messages: FrontMessage[], nextPage: string | null }> {
-  const makeRequest = async (
-    url: string,
-    retryCount = 0
-  ): Promise<AxiosResponse<FrontMessagesResponse>> => {
+async function getMessagesForConversation(conversationId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ messages: Message[], nextPage: string | null, hasMoreRecent: boolean }> {
+  const makeRequest = async (retryCount = 0): Promise<ConversationMessages> => {
     try {
-      const params: Record<string, any> = {
+      const params: any = { 
+        conversation_id: conversationId,
         limit,
+        page_token: nextPageUrl ? new URL(nextPageUrl).searchParams.get('page_token') : null,
       };
-
-      const response = await frontApi.get(url, { params });
       
-      // Monitor rate limits
-      updateRateLimitInfo(response);
-      
-      return response;
+      return await front.conversation.listMessages(params);
     } catch (error: any) {
-      if (error.response?.status === 429 && retryCount < 3) {
+      if (error.message?.includes('429') && retryCount < 3) {
         console.log(`Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        return makeRequest(url, retryCount + 1);
+        return makeRequest(retryCount + 1);
       }
       throw error;
     }
   };
 
   try {
-    const url = nextPageUrl || `/conversations/${conversationId}/messages`;
-    console.log(`Fetching messages from: ${url}`);
-    
-    const response = await makeRequest(url);
-    const data = response.data;
-    
-    console.log(`Fetched ${data._results.length} messages for conversation ${conversationId}`);
+    const data = await makeRequest();
     
     return {
       messages: data._results,
-      nextPage: data._pagination.next
+      nextPage: data._pagination?.next ?? null,
+      hasMoreRecent: true
     };
   } catch (error: any) {
     console.error(`Error fetching messages for conversation ${conversationId}:`, error.message);
-    if (error.response) {
-      console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
-    }
     throw error;
   }
 }
 
-async function main() {
-  console.log("🚀 Starting Front to Dust import...");
-  if (FRONT_FILTER) {
-    console.log(`📧 Inbox filter: ${FRONT_FILTER}`);
-  } else {
-    console.log(`📧 No inbox filter specified - processing all inboxes`);
+function formatRecipient(recipient: { handle: string; role: string }): string {
+  return recipient.handle || "Unknown";
+}
+
+function formatAuthor(author: { id: string; email: string; username: string; first_name: string } | undefined): string {
+  if (!author) return "Unknown";
+  return author.first_name || author.email || author.username || "Unknown";
+}
+
+function parseEmailContent(content: string): string {
+  if (!content) {
+    return "";
   }
-  console.log(`🎯 Target datasource: ${DUST_DATASOURCE_ID}`);
 
   try {
-    // Create rate limiters
+    const result = talon.quotations.extractFromPlain(content);
+    
+    return result.body.trim();
+  } catch (error) {
+    console.warn("Failed to parse email content with TalonJS, using original content:", error);
+    return content;
+  }
+}
+
+function formatContent(message: Message): string {
+  if (message.text) {
+    return parseEmailContent(message.text);
+  } else if (message.body) {
+    return parseEmailContent(message.body);
+  }
+  
+  return "";
+}
+
+function createTimelineFromMessages(messages: Message[]): TimelineEntry[] {
+  const timeline = messages.map((message) => ({
+    item: message,
+    type: "message" as const,
+    timestamp: message.created_at,
+  })).sort((a, b) => a.timestamp - b.timestamp);
+
+  return timeline.map(({ item, type, timestamp }) => {
+    const message = item as Message;
+    
+    const allRecipients = message.recipients.map((recipient) => 
+      formatRecipient(recipient)
+    );
+
+    const content = formatContent(message);
+
+    return {
+      timestamp: safeTimestampToDate(message.created_at),
+      type: message.is_inbound ? "RECEIVED" : "SENT",
+      sender: formatAuthor(message.author),
+      recipients: allRecipients,
+      subject: message.blurb,
+      content: content,
+      attachments: message.attachments?.map((att) => att.filename) || [],
+    };
+  });
+}
+
+function timelineToLLMFormat(timeline: TimelineEntry[]): string {
+  if (timeline.length === 0) {
+    return "<conversation>\nTOTAL_MESSAGES: 0\nNo messages found\n</conversation>";
+  }
+
+  const metadata = `<conversation>
+TOTAL_MESSAGES: ${timeline.length}
+CONVERSATION_START: ${timeline[0].timestamp.toISOString()}
+CONVERSATION_END: ${timeline[timeline.length - 1].timestamp.toISOString()}
+PARTICIPANTS: ${Array.from(new Set(timeline.flatMap((e) => [e.sender, ...e.recipients]))).join(", ")}
+</conversation>\n\n`;
+
+  const entries = timeline
+    .map((entry, index) => {
+      const timestamp = entry.timestamp.toISOString();
+      const attachmentInfo =
+        entry.attachments.length > 0
+          ? `ATTACHMENTS:\n${entry.attachments.map((a) => `- ${a}`).join("\n")}`
+          : "";
+
+      return `<entry index="${index + 1}" type="${entry.type}">
+FROM: ${entry.sender}
+TO: ${entry.recipients.join(", ")}
+TIMESTAMP: ${timestamp}
+${entry.subject ? `SUBJECT: ${entry.subject}\n` : ""}CONTENT:
+${entry.content}
+${attachmentInfo}
+</entry>`;
+    })
+    .join("\n\n");
+
+  return metadata + entries;
+}
+
+async function main() {
+  if (FRONT_FILTER) {
+    console.log(`Inbox filter: ${FRONT_FILTER}`);
+  } else {
+    console.log(`Processing all inboxes`);
+  }
+  console.log(`Target datasource: ${DUST_DATASOURCE_ID}`);
+  
+  const cutoffDate = safeTimestampToISO(cutoffTimestamp);
+  console.log(`Time filtering: Processing conversations updated after ${cutoffDate} (${DAYS_BACK} days back)`);
+
+  try {
     const dustLimiter = new Bottleneck({
       maxConcurrent: 1,
-      minTime: 60000 / DUST_TPM, // Convert requests per minute to milliseconds between requests
+      minTime: 60000 / DUST_TPM,
     });
 
     const frontLimiter = new Bottleneck({
       maxConcurrent: FRONT_MAX_CONCURRENT,
-      minTime: 60000 / FRONT_TPM, // Convert requests per minute to milliseconds between requests
+      minTime: 60000 / FRONT_TPM,
     });
 
-    // Get target inbox ID from filter
     let targetInboxId: string | null = null;
     if (FRONT_FILTER) {
       try {
@@ -586,9 +418,9 @@ async function main() {
           if (rawInboxId) {
             try {
               targetInboxId = convertUrlInboxIdToApiId(rawInboxId);
-              console.log(`🔄 Converted inbox ID: ${rawInboxId} → ${targetInboxId}`);
+              console.log(`Converted inbox ID: ${rawInboxId} → ${targetInboxId}`);
             } catch (conversionError: any) {
-              console.error(`❌ Error converting inbox ID "${rawInboxId}":`, conversionError.message);
+              console.error(`Error converting inbox ID "${rawInboxId}":`, conversionError.message);
               process.exit(1);
             }
           }
@@ -598,82 +430,67 @@ async function main() {
       }
     }
 
-    // Get all inboxes
-    console.log("📥 Fetching inboxes from Front...");
+    console.log("Fetching inboxes from Front...");
     const allInboxes = await frontLimiter.schedule(() => getAllInboxes());
     
-    // Filter inboxes if specified
-    let inboxesToProcess: FrontInbox[] = [];
+    let inboxesToProcess: Inbox[] = [];
     if (targetInboxId) {
       const targetInbox = allInboxes.find(inbox => inbox.id === targetInboxId);
       if (targetInbox) {
         inboxesToProcess = [targetInbox];
-        console.log(`🎯 Processing specific inbox: ${targetInbox.name} (${targetInbox.id})`);
+        console.log(`Processing specific inbox: ${targetInbox.name} (${targetInbox.id})`);
       } else {
-        console.warn(`⚠️  Inbox with ID "${targetInboxId}" not found. Available inboxes:`);
+        console.warn(`Inbox with ID "${targetInboxId}" not found. Available inboxes:`);
         allInboxes.forEach(inbox => console.log(`  - ${inbox.name} (${inbox.id})`));
         return;
       }
     } else {
       inboxesToProcess = allInboxes;
-      console.log(`📬 Processing all ${allInboxes.length} inboxes`);
+      console.log(`Processing all ${allInboxes.length} inboxes`);
     }
 
-    // Process messages incrementally
-    console.log("📥 Starting incremental message processing...");
+    console.log("Starting message processing...");
     
     let totalProcessed = 0;
     let totalSuccess = 0;
     let totalErrors = 0;
 
-    // Process each inbox
     for (const inbox of inboxesToProcess) {
-      console.log(`\n📬 Processing inbox: ${inbox.name} (${inbox.id})`);
+      console.log(`\nProcessing inbox: ${inbox.name} (${inbox.id})`);
       
       let hasMoreConversations = true;
       let nextConversationPage: string | null = null;
       let conversationCount = 0;
 
-      // Process conversations in batches
       while (hasMoreConversations) {
         try {
-          // Fetch next batch of conversations
-          const { conversations, nextPage: batchNextPage } = await frontLimiter.schedule(() => 
+          const { conversations, nextPage: batchNextPage, hasMoreRecent } = await frontLimiter.schedule(() => 
             getConversationsForInbox(inbox.id, nextConversationPage, BATCH_SIZE)
           );
 
-          if (conversations.length === 0) {
-            console.log(`✅ No more conversations in inbox ${inbox.name}`);
+          if (!hasMoreRecent && conversations.length === 0) {
+            console.log(`Reached time cutoff (${DAYS_BACK} days back), stopping conversation processing for inbox ${inbox.name}`);
             break;
           }
 
-          console.log(`📦 Processing batch of ${conversations.length} conversations...`);
+          console.log(`Processing batch of ${conversations.length} conversations...`);
 
-          // Process each conversation
           for (const conversation of conversations) {
             conversationCount++;
-            console.log(`💬 Processing conversation ${conversationCount}: ${conversation.subject || 'No Subject'} (${conversation.id})`);
+            console.log(`Processing conversation ${conversationCount}: ${conversation.subject || 'No Subject'} (${conversation.id})`);
             
             let hasMoreMessages = true;
             let nextMessagePage: string | null = null;
-            let allMessages: FrontMessage[] = [];
+            let allMessages: Message[] = [];
 
-            // Collect all messages for this conversation
             while (hasMoreMessages) {
               try {
-                const { messages, nextPage: messageNextPage } = await frontLimiter.schedule(() => 
+                const { messages, nextPage: messageNextPage, hasMoreRecent: messageHasMoreRecent } = await frontLimiter.schedule(() => 
                   getMessagesForConversation(conversation.id, nextMessagePage, BATCH_SIZE)
                 );
 
-                if (messages.length === 0) {
-                  console.log(`✅ No more messages in conversation ${conversation.id}`);
-                  break;
-                }
-
-                console.log(`📧 Collecting ${messages.length} messages from conversation ${conversation.id}`);
                 allMessages = allMessages.concat(messages);
 
-                // Check if we have more messages
                 if (messages.length < BATCH_SIZE) {
                   hasMoreMessages = false;
                 } else {
@@ -684,26 +501,25 @@ async function main() {
                 }
 
               } catch (error) {
-                console.error(`❌ Error collecting messages for conversation ${conversation.id}:`, error);
-                console.error("🛑 Stopping script due to error");
+                console.error(`Error collecting messages for conversation ${conversation.id}:`, error);
+                console.error("Stopping script due to error");
                 process.exit(1);
               }
             }
 
-            // Upload conversation as a single document
             try {
               await dustLimiter.schedule(() => upsertConversationToDust(conversation, allMessages));
               totalProcessed += allMessages.length;
-              totalSuccess += 1; // Count as 1 successful conversation upload
-              console.log(`✅ Completed conversation ${conversation.id}: ${allMessages.length} messages uploaded as single document`);
+              totalSuccess += 1;
+                            
+              console.log(`Completed conversation ${conversation.id}: ${allMessages.length} messages uploaded`);
             } catch (error) {
-              console.error(`❌ Error uploading conversation ${conversation.id}:`, error);
+              console.error(`Error uploading conversation ${conversation.id}:`, error);
               totalErrors += 1;
-              throw error; // Re-throw to stop processing
+              throw error;
             }
           }
 
-          // Check if we have more conversations
           if (conversations.length < BATCH_SIZE) {
             hasMoreConversations = false;
           } else {
@@ -713,35 +529,33 @@ async function main() {
             }
           }
 
-          // Optional: Add a small delay between conversation batches
           await new Promise(resolve => setTimeout(resolve, 1000));
 
         } catch (error) {
-          console.error(`❌ Error processing conversations for inbox ${inbox.id}:`, error);
-          console.error("🛑 Stopping script due to error");
+          console.error(`Error processing conversations for inbox ${inbox.id}:`, error);
+          console.error("Stopping script due to error");
           process.exit(1);
         }
       }
 
-      console.log(`✅ Completed inbox ${inbox.name}: ${conversationCount} conversations processed`);
+      console.log(`Completed inbox ${inbox.name}: ${conversationCount} conversations processed`);
     }
 
-    console.log("\n✅ Import completed!");
-    console.log(`📊 Final Summary: ${totalProcessed} messages processed`);
-    console.log(`✅ Success: ${totalSuccess} conversations imported`);
-    console.log(`❌ Errors: ${totalErrors} conversations failed`);
+    console.log("\nImport completed!");
+    console.log(`Final Summary: ${totalProcessed} messages processed`);
+    console.log(`Success: ${totalSuccess} conversations imported`);
+    console.log(`Errors: ${totalErrors} conversations failed`);
     
-    // Rate limit summary
     if (currentRateLimit) {
-      console.log(`📊 Final Rate Limit Status: ${currentRateLimit.remaining}/${currentRateLimit.limit} requests remaining`);
+      console.log(`Final Rate Limit Status: ${currentRateLimit.remaining}/${currentRateLimit.limit} requests remaining`);
     }
     
     if (totalErrors > 0) {
-      console.log("⚠️  Some conversations failed to import. Check the logs above for details.");
+      console.log("Some conversations failed to import. Check the logs above for details.");
     }
 
   } catch (error: any) {
-    console.error("❌ Import failed:", error.message);
+    console.error("Import failed:", error.message);
     if (error.response) {
       console.error("Response status:", error.response.status);
       console.error("Response data:", error.response.data);
