@@ -49,6 +49,9 @@ const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50');
 const DAYS_BACK = parseInt(process.env.DAYS_BACK || '30'); // Default to 30 days back
 const cutoffTimestamp = Math.floor((Date.now() - (DAYS_BACK * 24 * 60 * 60 * 1000)) / 1000);
 
+// Message count filtering
+const MIN_MESSAGE_COUNT = parseInt(process.env.MIN_MESSAGE_COUNT || '1');
+
 const front = new Front(FRONT_API_TOKEN!);
 
 const dustApi = axios.create({
@@ -397,6 +400,7 @@ async function main() {
   
   const cutoffDate = safeTimestampToISO(cutoffTimestamp);
   console.log(`Time filtering: Processing conversations updated after ${cutoffDate} (${DAYS_BACK} days back)`);
+  console.log(`Message count filtering: Minimum ${MIN_MESSAGE_COUNT} messages per conversation`);
 
   try {
     const dustLimiter = new Bottleneck({
@@ -454,6 +458,7 @@ async function main() {
     let totalProcessed = 0;
     let totalSuccess = 0;
     let totalErrors = 0;
+    let totalSkipped = 0;
 
     for (const inbox of inboxesToProcess) {
       console.log(`\nProcessing inbox: ${inbox.name} (${inbox.id})`);
@@ -507,6 +512,13 @@ async function main() {
               }
             }
 
+            // Check if conversation has enough messages
+            if (allMessages.length < MIN_MESSAGE_COUNT) {
+              console.log(`Skipping conversation ${conversation.id}: ${allMessages.length} messages (minimum ${MIN_MESSAGE_COUNT} required)`);
+              totalSkipped += 1;
+              continue;
+            }
+
             try {
               await dustLimiter.schedule(() => upsertConversationToDust(conversation, allMessages));
               totalProcessed += allMessages.length;
@@ -544,6 +556,7 @@ async function main() {
     console.log("\nImport completed!");
     console.log(`Final Summary: ${totalProcessed} messages processed`);
     console.log(`Success: ${totalSuccess} conversations imported`);
+    console.log(`Skipped: ${totalSkipped} conversations (insufficient messages)`);
     console.log(`Errors: ${totalErrors} conversations failed`);
     
     if (currentRateLimit) {
