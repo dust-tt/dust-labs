@@ -185,17 +185,8 @@ async function upsertConversationToDust(conversation: Conversation, messages: Me
 async function getAllInboxes(): Promise<Inbox[]> {
   try {
     console.log("Fetching inboxes...");
-    const inboxes: Inbox[] = [];
-
-    let nextPageUrl: string | null = null;
-    while (true) {
-      const response = await front.inbox.list();
-      inboxes.push(...response._results);
-      nextPageUrl = response._pagination?.next ?? null;
-      if (!nextPageUrl) {
-        break;
-      }
-    }
+    const response = await front.inbox.list();
+    const inboxes = response._results;
     console.log(`Found ${inboxes.length} inboxes`);
     return inboxes;
   } catch (error: any) {
