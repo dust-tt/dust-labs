@@ -2,13 +2,10 @@ import axios from "axios";
 import * as dotenv from "dotenv";
 import Bottleneck from "bottleneck";
 import * as talon from "talonjs";
-import { Front } from "front-sdk";
 import type { 
   Inbox, 
   Conversation, 
   Message,
-  Conversations,
-  ConversationMessages
 } from "front-sdk";
 
 dotenv.config();
@@ -52,7 +49,13 @@ const cutoffTimestamp = Math.floor((Date.now() - (DAYS_BACK * 24 * 60 * 60 * 100
 // Message count filtering
 const MIN_MESSAGE_COUNT = parseInt(process.env.MIN_MESSAGE_COUNT || '1');
 
-const front = new Front(FRONT_API_TOKEN!);
+const frontApi = axios.create({
+  baseURL: 'https://api2.frontapp.com',
+  headers: {
+    'Authorization': `Bearer ${FRONT_API_TOKEN}`,
+    'Accept': 'application/json',
+  },
+});
 
 const dustApi = axios.create({
   baseURL: DUST_BASE_URL,
@@ -185,8 +188,8 @@ async function upsertConversationToDust(conversation: Conversation, messages: Me
 async function getAllInboxes(): Promise<Inbox[]> {
   try {
     console.log("Fetching inboxes...");
-    const response = await front.inbox.list();
-    const inboxes = response._results;
+    const response = await frontApi.get('/inboxes');
+    const inboxes = response.data._results;
     console.log(`Found ${inboxes.length} inboxes`);
     return inboxes;
   } catch (error: any) {
@@ -196,33 +199,25 @@ async function getAllInboxes(): Promise<Inbox[]> {
 }
 
 async function getConversationsForInbox(inboxId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ conversations: Conversation[], nextPage: string | null, hasMoreRecent: boolean }> {
-  const makeRequest = async (retryCount = 0): Promise<Conversations> => {
-    try {
-      const params: any = { 
-        inbox_id: inboxId,
-        limit,
-        page_token: nextPageUrl ? new URL(nextPageUrl).searchParams.get('page_token') : null,
-      };
-      
-      return await front.inbox.listConversations(params);
-    } catch (error: any) {
-      if (error.message?.includes('429') && retryCount < 3) {
-        console.log(`Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        return makeRequest(retryCount + 1);
-      }
-      throw error;
-    }
-  };
-
   try {
-    const data = await makeRequest();
+    const params = new URLSearchParams();
+    params.set('limit', limit.toString());
+    
+    if (nextPageUrl) {
+      const pageToken = new URL(nextPageUrl).searchParams.get('page_token');
+      if (pageToken) {
+        params.set('page_token', pageToken);
+      }
+    }
+    
+    const response = await frontApi.get(`/inboxes/${inboxId}/conversations?${params}`);
+    const data = response.data;
     
     let filteredConversations = data._results;
     let hasMoreRecent = true;
 
     const beforeFilter = filteredConversations.length;
-    filteredConversations = filteredConversations.filter(conv => {
+    filteredConversations = filteredConversations.filter((conv: Conversation) => {
       if (!conv.created_at || conv.created_at <= 0 || isNaN(conv.created_at)) {
         console.warn(`Invalid created_at timestamp for conversation ${conv.id}: ${conv.created_at}`);
         return false;
@@ -252,27 +247,19 @@ async function getConversationsForInbox(inboxId: string, nextPageUrl: string | n
 }
 
 async function getMessagesForConversation(conversationId: string, nextPageUrl: string | null = null, limit: number = 100): Promise<{ messages: Message[], nextPage: string | null, hasMoreRecent: boolean }> {
-  const makeRequest = async (retryCount = 0): Promise<ConversationMessages> => {
-    try {
-      const params: any = { 
-        conversation_id: conversationId,
-        limit,
-        page_token: nextPageUrl ? new URL(nextPageUrl).searchParams.get('page_token') : null,
-      };
-      
-      return await front.conversation.listMessages(params);
-    } catch (error: any) {
-      if (error.message?.includes('429') && retryCount < 3) {
-        console.log(`Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        return makeRequest(retryCount + 1);
-      }
-      throw error;
-    }
-  };
-
   try {
-    const data = await makeRequest();
+    const params = new URLSearchParams();
+    params.set('limit', limit.toString());
+    
+    if (nextPageUrl) {
+      const pageToken = new URL(nextPageUrl).searchParams.get('page_token');
+      if (pageToken) {
+        params.set('page_token', pageToken);
+      }
+    }
+    
+    const response = await frontApi.get(`/conversations/${conversationId}/messages?${params}`);
+    const data = response.data;
     
     return {
       messages: data._results,
