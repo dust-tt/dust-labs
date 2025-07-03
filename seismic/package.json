@@ -1,0 +1,34 @@
+{
+  "name": "seismic-to-dust",
+  "version": "1.0.0",
+  "description": "Sync Seismic content to Dust data sources",
+  "main": "seismic-to-dust.ts",
+  "scripts": {
+    "sync": "npx tsx seismic-to-dust.ts",
+    "build": "tsc",
+    "dev": "tsx watch seismic-to-dust.ts"
+  },
+  "keywords": [
+    "seismic",
+    "dust",
+    "api",
+    "sync",
+    "pdf"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bottleneck": "^2.19.5",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^2.7.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "@types/node-fetch": "^2.6.7",
+    "@types/pdf-parse": "^1.1.5",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.0"
+  }
+}
