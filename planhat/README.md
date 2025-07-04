@@ -29,6 +29,7 @@ DUST_API_KEY=your_dust_api_key
 DUST_WORKSPACE_ID=your_dust_workspace_id
 DUST_DATASOURCE_ID=your_dust_datasource_id
 DUST_SPACE_ID=your_dust_space_id
+DUST_REGION=US  # US or EU (defaults to US)
 
 # Sync configuration
 LOOKBACK_DAYS=7  # Number of days to look back for updated companies
