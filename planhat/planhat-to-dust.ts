@@ -11,6 +11,7 @@ const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
 const DUST_SPACE_ID = process.env.DUST_SPACE_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
+const DUST_REGION = process.env.DUST_REGION || "US";
 const LOOKBACK_DAYS = parseInt(process.env.LOOKBACK_DAYS || "7", 10);
 const THREADS_NUMBER = parseInt(process.env.THREADS_NUMBER || "1", 10);
 
@@ -33,8 +34,12 @@ const planhatApi = axios.create({
   },
 });
 
+// Determine Dust API base URL based on region
+const dustBaseUrl =
+  DUST_REGION === "EU" ? "https://eu.dust.tt/api/v1" : "https://dust.tt/api/v1";
+
 const dustApi = axios.create({
-  baseURL: "https://dust.tt/api/v1",
+  baseURL: dustBaseUrl,
   headers: {
     Authorization: `Bearer ${DUST_API_KEY}`,
     "Content-Type": "application/json",
