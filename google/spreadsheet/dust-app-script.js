@@ -721,6 +721,7 @@ function processWithAssistant(
       blocking: true,
       title: "Google Sheets Conversation",
       visibility: "unlisted",
+      skipToolsValidation: true,
     };
 
     const request = {
