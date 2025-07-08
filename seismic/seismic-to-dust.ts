@@ -23,6 +23,7 @@ const DUST_API_KEY = process.env.DUST_API_KEY;
 const DUST_WORKSPACE_ID = process.env.DUST_WORKSPACE_ID;
 const DUST_SPACE_ID = process.env.DUST_SPACE_ID;
 const DUST_DATASOURCE_ID = process.env.DUST_DATASOURCE_ID;
+const DUST_API_BASE_URL = process.env.DUST_API_BASE_URL || 'https://dust.tt/api/v1';
 const DUST_RATE_LIMIT_PER_MINUTE = parseInt(process.env.DUST_RATE_LIMIT_PER_MINUTE || '120');
 
 const MAX_DUST_TEXT_SIZE = 2 * 1024 * 1024; // 2MB
@@ -105,7 +106,7 @@ seismicApi.interceptors.response.use(
 );
 
 const dustApi = axios.create({
-  baseURL: 'https://dust.tt/api/v1',
+  baseURL: DUST_API_BASE_URL,
   headers: {
     'Authorization': `Bearer ${DUST_API_KEY}`,
     'Content-Type': 'application/json'
