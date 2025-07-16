@@ -576,14 +576,35 @@ function getSourceUrlFromReference(reference) {
                       }
                     }
                   }
-                } else if (message.status === 'errored') {
+                } else if (message.status === 'errored' || message.status === 'failed') {
                   // Message failed
                   isCompleted = true;
+                  const errorMessage = message.error?.message || 'Failed to generate response. Please try again.';
+                  const errorCode = message.error?.code || 'unknown_error';
+                  
                   if (assistantMessageElement) {
-                    assistantMessageElement.innerHTML = `
-                      <h4>Error:</h4>
-                      <pre>Failed to generate response. Please try again.</pre>
-                    `;
+                    // Hide any existing chain of thought
+                    const existingChainOfThought = document.getElementById(`chain-of-thought-${uniqueId}`);
+                    if (existingChainOfThought) {
+                      existingChainOfThought.classList.add('fade-out');
+                      setTimeout(() => {
+                        if (existingChainOfThought.parentNode) {
+                          existingChainOfThought.remove();
+                        }
+                      }, 200);
+                    }
+                    
+                    setTimeout(() => {
+                      assistantMessageElement.innerHTML = `
+                        <h4>@${agentName}:</h4>
+                        <div class="error-message">
+                          <div class="error-message-content">
+                            <div class="error-message-title">Error: ${errorCode.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                            <div class="error-message-text">${errorMessage}</div>
+                          </div>
+                        </div>
+                      `;
+                    }, existingChainOfThought ? 200 : 0);
                   }
                 }
                 break; // Only process the first agent message
@@ -825,6 +846,7 @@ function getSourceUrlFromReference(reference) {
 
       const response = await client.request(options);
 
+
       // Start polling for the conversation result
       await pollConversationEvents(
         response.conversation.sId,
@@ -887,6 +909,7 @@ function getSourceUrlFromReference(reference) {
   function generateUniqueId() {
     return "id-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
   }
+
 
   function getPreviousMessages() {
     const dustResponse = document.getElementById("dustResponse");

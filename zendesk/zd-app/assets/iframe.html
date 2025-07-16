@@ -351,6 +351,43 @@
       .chain-of-thought::-webkit-scrollbar-thumb:hover {
         background: #a8a8a8;
       }
+
+      .error-message {
+        background-color: #fee;
+        border: 1px solid #fcc;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 16px 0;
+        animation: slideIn 0.3s ease-out;
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .error-message-content {
+        width: 100%;
+      }
+
+      .error-message-title {
+        font-weight: 600;
+        color: #d32f2f;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+
+      .error-message-text {
+        color: #666;
+        font-size: 13px;
+        line-height: 1.5;
+      }
     </style>
   </head>
   <body>
