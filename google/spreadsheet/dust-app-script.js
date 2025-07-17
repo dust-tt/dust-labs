@@ -170,27 +170,133 @@ function processSelected() {
 
   var htmlContent =
     "" +
+    '<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">' +
     '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />' +
     '<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>' +
     '<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>' +
     "<style>" +
-    "@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap');" +
     "* {" +
     "font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;" +
+    "box-sizing: border-box;" +
     "}" +
     "body {" +
-    "padding: 10px;" +
+    "margin: 0;" +
+    "padding: 0;" +
+    "background-color: #f8f9fa;" +
+    "}" +
+    ".container {" +
+    "padding: 24px;" +
+    "background-color: white;" +
+    "min-height: 100vh;" +
+    "}" +
+    ".logo {" +
+    "display: flex;" +
+    "justify-content: start;" +
+    "}" +
+    ".main-title {" +
+    "font-size: 18px;" +
+    "font-weight: 600;" +
+    "color: #1f2937;" +
+    "line-height: 1.2;" +
+    "}" +
+    ".form-group {" +
+    "margin-bottom: 24px;" +
+    "}" +
+    ".form-label {" +
+    "display: block;" +
+    "font-weight: 500;" +
+    "color: #374151;" +
+    "margin-bottom: 8px;" +
+    "font-size: 14px;" +
+    "}" +
+    ".search-container {" +
+    "position: relative;" +
+    "}" +
+    ".search-input {" +
+    "width: 100%;" +
+    "padding: 12px 16px;" +
+    "padding-right: 48px;" +
+    "border: 1px solid #d1d5db;" +
+    "border-radius: 8px;" +
+    "font-size: 14px;" +
+    "background-color: #f9fafb;" +
+    "}" +
+    ".search-icon {" +
+    "position: absolute;" +
+    "right: 16px;" +
+    "top: 50%;" +
+    "transform: translateY(-50%);" +
+    "color: #9ca3af;" +
+    "}" +
+    ".input-group {" +
+    "display: flex;" +
+    "gap: 8px;" +
+    "align-items: flex-end;" +
+    "}" +
+    ".input-group input {" +
+    "flex: 1;" +
+    "padding: 12px 16px;" +
+    "border: 1px solid #d1d5db;" +
+    "border-radius: 8px;" +
+    "font-size: 14px;" +
+    "width:100px" +
+    "}" +
+    "#headerRow {" +
+    "padding: 12px 16px;" +
+    "border: 1px solid #d1d5db;" +
+    "border-radius: 8px;" +
+    "font-size: 14px;" +
+    "width: 100px;" +
+    "}" +
+    ".btn {" +
+    "padding: 12px 20px;" +
+    "border: none;" +
+    "border-radius: 8px;" +
+    "font-size: 14px;" +
+    "font-weight: 500;" +
+    "cursor: pointer;" +
+    "transition: all 0.2s ease;" +
+    "}" +
+    ".btn-secondary {" +
+    "background-color: #f3f4f6;" +
+    "color: #374151;" +
+    "}" +
+    ".btn-secondary:hover {" +
+    "background-color: #e5e7eb;" +
+    "}" +
+    ".btn-primary {" +
+    "background-color: #3b82f6;" +
+    "color: white;" +
+    "width: 100%;" +
+    "padding: 16px;" +
+    "font-size: 16px;" +
+    "margin-top: 24px;" +
+    "}" +
+    ".btn-primary:hover {" +
+    "background-color: #2563eb;" +
+    "}" +
+    ".btn-primary:disabled {" +
+    "background-color: #9ca3af;" +
+    "cursor: not-allowed;" +
+    "}" +
+    "textarea {" +
+    "width: 100%;" +
+    "padding: 12px 16px;" +
+    "border: 1px solid #d1d5db;" +
+    "border-radius: 8px;" +
+    "font-size: 14px;" +
+    "resize: vertical;" +
+    "min-height: 80px;" +
     "}" +
     ".spinner {" +
     "display: inline-block;" +
-    "width: 12px;" +
-    "height: 12px;" +
-    "border: 3px solid #f3f3f3;" +
-    "border-top: 3px solid #1C91FF;" +
+    "width: 16px;" +
+    "height: 16px;" +
+    "border: 2px solid #f3f3f3;" +
+    "border-top: 2px solid #3b82f6;" +
     "border-radius: 50%;" +
     "animation: spin 1s linear infinite;" +
     "margin-right: 8px;" +
-    "vertical-align: middle;" +
     "}" +
     "@keyframes spin {" +
     "0% { transform: rotate(0deg); }" +
@@ -198,141 +304,93 @@ function processSelected() {
     "}" +
     "#status {" +
     "text-align: center;" +
-    "margin: 15px 0;" +
-    "color: #666;" +
-    "line-height: 1.4;" +
-    "}" +
-    "select, input, textarea {" +
-    "width: 100%;" +
-    "padding: 8px 12px;" +
-    "margin-bottom: 10px;" +
-    "border: 1px solid #ddd;" +
-    "border-radius: 12px;" +
-    "font-family: inherit;" +
-    "}" +
-    "select {" +
-    "background: white;" +
-    "}" +
-    'input[type="submit"], input[type="button"] {' +
-    "background-color: #1C91FF;" +
-    "color: white;" +
-    "border: none;" +
-    "border-radius: 12px;" +
-    "padding: 10px 20px;" +
-    "cursor: pointer;" +
-    "transition: background-color 0.2s ease;" +
-    "}" +
-    'input[type="submit"]:hover, input[type="button"]:hover {' +
-    "background-color: #0F7CE8;" +
-    "}" +
-    'input[type="submit"]:disabled {' +
-    "background-color: #cccccc;" +
-    "cursor: not-allowed;" +
-    "}" +
-    ".error {" +
-    "color: red;" +
-    "display: none;" +
-    "margin-bottom: 10px;" +
-    "}" +
-    "label {" +
-    "font-weight: 500;" +
-    "color: #333;" +
-    "margin-bottom: 5px;" +
-    "display: inline-block;" +
+    "margin: 16px 0;" +
+    "color: #6b7280;" +
+    "font-size: 14px;" +
     "}" +
     ".select2-container {" +
     "width: 100% !important;" +
-    "margin-bottom: 10px;" +
     "}" +
     ".select2-selection {" +
-    "height: 38px !important;" +
-    "padding: 4px !important;" +
-    "border-radius: 12px !important;" +
+    "height: 48px !important;" +
+    "border: 1px solid #d1d5db !important;" +
+    "border-radius: 8px !important;" +
+    "background-color: #f9fafb !important;" +
+    "}" +
+    ".select2-selection__rendered {" +
+    "line-height: 46px !important;" +
+    "padding-left: 16px !important;" +
     "}" +
     ".select2-selection__arrow {" +
-    "height: 36px !important;" +
+    "height: 46px !important;" +
     "}" +
-    "#cellRange {" +
-    "width: calc(100% - 90px);" +
-    "display: inline-block;" +
-    "margin-right: 5px;" +
-    "}" +
-    'input[type="submit"], input[type="button"], #selectCellsBtn {' +
-    "background-color: #1C91FF;" +
-    "color: white;" +
-    "border: none;" +
-    "border-radius: 12px;" +
-    "padding: 10px 20px;" +
-    "cursor: pointer;" +
-    "transition: background-color 0.2s ease;" +
-    "}" +
-    'input[type="submit"]:hover, input[type="button"]:hover, #selectCellsBtn:hover {' +
-    "background-color: #0F7CE8;" +
-    "}" +
-    "#selectCellsBtn {" +
-    "width: 85px;" +
-    "padding: 8px 5px;" +
-    "border-radius: 12px;" +
-    "display: inline-block;" +
-    "}" +
-    "#targetColumn {" +
-    "width: 100%;" +
-    "}" +
-    'input[type="submit"] {' +
-    "width: 100%;" +
-    "margin-top: 10px;" +
-    "}" +
-    ".button-group {" +
-    "display: block;" +
-    "margin-top: 20px;" +
-    "}" +
-    "textarea {" +
-    "width: 99%;" +
-    "resize: vertical;" +
-    "}" +
-    ".header-row-section {" +
+    ".error {" +
+    "color: #dc2626;" +
+    "font-size: 14px;" +
+    "margin-top: 8px;" +
     "display: none;" +
-    "margin-bottom: 10px;" +
     "}" +
     ".info-text {" +
     "font-size: 12px;" +
-    "color: #666;" +
-    "margin-top: 5px;" +
-    "font-style: italic;" +
+    "color: #6b7280;" +
+    "margin-top: 4px;" +
+    "}" +
+    ".header-row-section {" +
+    "display: none;" +
     "}" +
     "</style>" +
+    '<div class="container">' +
+    '<div class="logo">' +
+    '<svg width="96" height="24" viewBox="0 0 96 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M84 0H72V24H84V0Z" fill="#FE9C1A"/>' +
+    '<path d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z" fill="#E2F78C"/>' +
+    '<path d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z" fill="#FFC3DF"/>' +
+    '<path d="M12 0H0V24H12V0Z" fill="#418B5C"/>' +
+    '<path d="M48 0H24V12H48V0Z" fill="#E14322"/>' +
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z" fill="#3B82F6"/>' +
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z" fill="#9FDBFF"/>' +
+    "</svg>" +
+    "</div>" +
+    '<h2 class="main-title">Use AI Agents in your<br>spreadsheet</h2>' +
     '<form id="myForm">' +
-    '<div style="margin-bottom: 10px;">' +
-    '<label for="assistant">Agent:</label><br>' +
+    '<div class="form-group">' +
+    '<label class="form-label">Select agent</label>' +
+    '<div class="search-container">' +
     '<select id="assistant" name="assistant" required disabled>' +
     '<option value=""></option>' +
     "</select>" +
+    '<div class="search-icon">🔍</div>' +
+    "</div>" +
     '<div id="loadError" class="error">Failed to load agents</div>' +
     "</div>" +
-    '<div style="margin-bottom: 10px;">' +
-    '<label for="cellRange">Input Cells:</label><br>' +
-    '<input type="text" id="cellRange" name="cellRange" required placeholder="e.g., A1:A10" style="width:100px">' +
-    '<input type="button" value="Use Selection" id="selectCellsBtn" style="width:100px">' +
+    '<div class="form-group">' +
+    '<label class="form-label">Select input range</label>' +
+    '<div class="input-group">' +
+    '<input type="text" id="cellRange" name="cellRange" required placeholder="A1:A10">' +
+    '<button type="button" class="btn btn-secondary" id="selectCellsBtn">Use selection</button>' +
+    "</div>" +
     '<div id="rangeInfo" class="info-text"></div>' +
     "</div>" +
-    '<div id="headerRowSection" class="header-row-section">' +
-    '<label for="headerRow">Header Row Number:</label><br>' +
-    '<input type="number" id="headerRow" name="headerRow" value="1" min="1" style="width:120px">' +
+    '<div id="headerRowSection" class="header-row-section form-group">' +
+    '<label class="form-label">Header Row Number:</label>' +
+    '<input type="number" id="headerRow" name="headerRow" value="1" min="1">' +
     '<div class="info-text">Row number containing column headers (default: 1)</div>' +
     "</div>" +
-    '<div style="margin-bottom: 10px;">' +
-    '<label for="targetColumn">Target Column:</label><br>' +
-    '<input type="text" id="targetColumn" name="targetColumn" required placeholder="e.g., B" style="width:120px">' +
+    '<div class="form-group">' +
+    '<label class="form-label">Select output column</label>' +
+    '<div class="input-group">' +
+    '<input type="text" id="targetColumn" name="targetColumn" required placeholder="B">' +
+    '<button type="button" class="btn btn-secondary">Use selection</button>' +
     "</div>" +
-    '<div style="margin-bottom: 10px;">' +
-    '<label for="instructions">Instructions (optional):</label><br>' +
-    '<textarea id="instructions" name="instructions" rows="4" style="width:90%"></textarea>' +
+    "</div>" +
+    '<div class="form-group">' +
+    '<label class="form-label">Additional instructions (optional)</label>' +
+    '<textarea id="instructions" name="instructions" placeholder="Summarize each row in 2 sentences max"></textarea>' +
     "</div>" +
     '<div id="status"></div>' +
-    '<div class="button-group">' +
-    '<input type="submit" value="Process" id="submitBtn">' +
-    "</div>" +
+    '<button type="submit" class="btn btn-primary" id="submitBtn">Run</button>' +
     "</form>" +
+    "</div>" +
     "<script>" +
     "function debounce(func, wait) {" +
     "let timeout;" +
@@ -382,11 +440,11 @@ function processSelected() {
     "const selectCellsBtn = document.getElementById('selectCellsBtn');" +
     "const cellRangeInput = document.getElementById('cellRange');" +
     "selectCellsBtn.disabled = true;" +
-    "selectCellsBtn.value = '...';" +
+    "selectCellsBtn.textContent = 'Loading...';" +
     "google.script.run" +
     ".withSuccessHandler(function(result) {" +
     "selectCellsBtn.disabled = false;" +
-    "selectCellsBtn.value = 'Use Selection';" +
+    "selectCellsBtn.textContent = 'Use selection';" +
     "if (result.success) {" +
     "cellRangeInput.value = result.range;" +
     "updateRangeInfo(result.range);" +
@@ -401,7 +459,7 @@ function processSelected() {
     "})" +
     ".withFailureHandler(function(error) {" +
     "selectCellsBtn.disabled = false;" +
-    "selectCellsBtn.value = 'Use Selection';" +
+    "selectCellsBtn.textContent = 'Use selection';" +
     "console.error('Selection failed:', error);" +
     "})" +
     ".handleCellSelection();" +
@@ -508,7 +566,7 @@ function processSelected() {
     "}" +
     "const headerRow = parseInt(document.getElementById('headerRow').value) || 1;" +
     "document.getElementById('submitBtn').disabled = true;" +
-    "document.getElementById('status').innerHTML = '<div id=\"spinner\" class=\"spinner\"></div> Processing...';" +
+    "document.getElementById('status').innerHTML = '<div class=\"spinner\"></div> Processing...';" +
     "google.script.run" +
     ".withSuccessHandler(function(result) {" +
     "if (result.completed) {" +
@@ -519,7 +577,7 @@ function processSelected() {
     "}, 3000);" +
     "} else if (result.progress) {" +
     "document.getElementById('status').innerHTML = " +
-    '\'<div id="spinner" class="spinner"></div> \' + result.progress;' +
+    "'<div class=\"spinner\"></div> ' + result.progress;" +
     "}" +
     "})" +
     ".withFailureHandler(function(error) {" +
@@ -536,7 +594,9 @@ function processSelected() {
     "});" +
     "</script>";
 
-  const htmlOutput = HtmlService.createHtmlOutput(htmlContent).setTitle("Dust");
+  const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
+    .setTitle("Dust")
+    .setWidth(400);
   SpreadsheetApp.getUi().showSidebar(htmlOutput);
 }
 
