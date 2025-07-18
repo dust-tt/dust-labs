@@ -1,3 +1,6 @@
+// Version number for the Dust Google Sheets integration
+const DUST_VERSION = "0.1";
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Dust")
@@ -188,6 +191,8 @@ function processSelected() {
     "padding: 24px;" +
     "background-color: white;" +
     "min-height: 100vh;" +
+    "position: relative;" +
+    "padding-bottom: 60px;" +
     "}" +
     ".logo {" +
     "display: flex;" +
@@ -338,6 +343,13 @@ function processSelected() {
     ".header-row-section {" +
     "display: none;" +
     "}" +
+    ".version {" +
+    "position: absolute;" +
+    "bottom: 24px;" +
+    "right: 24px;" +
+    "font-size: 12px;" +
+    "color: #9ca3af;" +
+    "}" +
     "</style>" +
     '<div class="container">' +
     '<div class="logo">' +
@@ -390,6 +402,7 @@ function processSelected() {
     '<div id="status"></div>' +
     '<button type="submit" class="btn btn-primary" id="submitBtn">Run</button>' +
     "</form>" +
+    '<div class="version">v' + DUST_VERSION + '</div>' +
     "</div>" +
     "<script>" +
     "function debounce(func, wait) {" +
@@ -566,9 +579,31 @@ function processSelected() {
     "}" +
     "const headerRow = parseInt(document.getElementById('headerRow').value) || 1;" +
     "document.getElementById('submitBtn').disabled = true;" +
-    "document.getElementById('status').innerHTML = '<div class=\"spinner\"></div> Processing...';" +
+    "document.getElementById('status').innerHTML = '<div class=\"spinner\"></div> Analyzing selection...';" +
+    "google.script.run" +
+    ".withSuccessHandler(function(rangeInfo) {" +
+    "if (rangeInfo.success) {" +
+    "let estimatedRows = rangeInfo.numRows;" +
+    "if (rangeInfo.hasMultipleColumns && headerRow >= 1) {" +
+    "estimatedRows = Math.max(0, estimatedRows - 1);" +
+    "}" +
+    "document.getElementById('status').innerHTML = '<div class=\"spinner\"></div> Initializing (0/' + estimatedRows + ')';" +
+    "let progressInterval;" +
+    "function updateProgress() {" +
+    "google.script.run" +
+    ".withSuccessHandler(function(progress) {" +
+    "if (progress) {" +
+    "document.getElementById('status').innerHTML = " +
+    "'<div class=\"spinner\"></div> Processing (' + progress.current + '/' + progress.total + ')';" +
+    "}" +
+    "})" +
+    ".getProcessingProgress();" +
+    "}" +
+    "setTimeout(updateProgress, 500);" +
+    "progressInterval = setInterval(updateProgress, 1000);" +
     "google.script.run" +
     ".withSuccessHandler(function(result) {" +
+    "clearInterval(progressInterval);" +
     "if (result.completed) {" +
     "document.getElementById('submitBtn').disabled = false;" +
     "document.getElementById('status').innerHTML = '✅ Processing complete';" +
@@ -581,16 +616,27 @@ function processSelected() {
     "}" +
     "})" +
     ".withFailureHandler(function(error) {" +
+    "clearInterval(progressInterval);" +
     "document.getElementById('submitBtn').disabled = false;" +
     "document.getElementById('status').textContent = '❌ Error: ' + error;" +
     "})" +
-    ".processWithAssistant(" +
+    ".processWithAssistantWithProgress(" +
     "assistantSelect.value, " +
     "document.getElementById('instructions').value, " +
     "cellRange.value, " +
     "document.getElementById('targetColumn').value, " +
     "headerRow" +
     ");" +
+    "} else {" +
+    "document.getElementById('submitBtn').disabled = false;" +
+    "document.getElementById('status').textContent = '❌ Error: Invalid range';" +
+    "}" +
+    "})" +
+    ".withFailureHandler(function(error) {" +
+    "document.getElementById('submitBtn').disabled = false;" +
+    "document.getElementById('status').textContent = '❌ Error: ' + error;" +
+    "})" +
+    ".analyzeSelectedRange(cellRange.value);" +
     "});" +
     "</script>";
 
@@ -676,6 +722,7 @@ function processWithAssistant(
   const docProperties = PropertiesService.getDocumentProperties();
   const token = docProperties.getProperty("dustToken");
   const workspaceId = docProperties.getProperty("workspaceId");
+  const userProps = PropertiesService.getUserProperties();
 
   if (!token || !workspaceId) {
     throw new Error("Please configure your Dust credentials first");
@@ -713,7 +760,6 @@ function processWithAssistant(
     if (headerRowIndex >= 0 && headerRowIndex < numRows) {
       headers = selectedValues[headerRowIndex];
     } else {
-      // If header row is outside the selected range, get it from the sheet with merged cell handling
       headers = getValuesWithMergedCells(
         sheet,
         headerRow,
@@ -729,17 +775,14 @@ function processWithAssistant(
   for (var i = 0; i < numRows; i++) {
     const currentRow = startRow + i;
 
-    // Skip the header row if it's within our selection
     if (numColumns > 1 && currentRow === headerRow) {
       continue;
     }
 
     const targetCell = sheet.getRange(currentRow, targetColIndex);
-
     var inputContent = "";
 
     if (numColumns === 1) {
-      // Single column - just use the value
       const inputValue = selectedValues[i][0];
       if (!inputValue) {
         targetCell.setValue("No input value");
@@ -747,7 +790,6 @@ function processWithAssistant(
       }
       inputContent = inputValue.toString();
     } else {
-      // Multiple columns - combine with headers
       const rowValues = selectedValues[i];
       const contentParts = [];
 
@@ -757,7 +799,7 @@ function processWithAssistant(
         contentParts.push(header + ": " + value);
       }
 
-      inputContent = contentParts.join("\n");
+      inputContent = contentParts.join("\\n");
 
       if (!inputContent.trim()) {
         targetCell.setValue("No input value");
@@ -767,7 +809,7 @@ function processWithAssistant(
 
     const payload = {
       message: {
-        content: (instructions || "") + "\n\nInput:\n" + inputContent,
+        content: (instructions || "") + "\\n\\nInput:\\n" + inputContent,
         mentions: [{ configurationId: assistantId }],
         context: {
           username: "gsheet",
@@ -803,6 +845,19 @@ function processWithAssistant(
 
   const totalCells = cellsToProcess.length;
   var processedCells = 0;
+
+  // Update initial progress
+  userProps.setProperty(
+    "processingProgress",
+    JSON.stringify({
+      current: 0,
+      total: totalCells,
+      status: "processing",
+    })
+  );
+  
+  // Force flush to ensure UI can read initial progress immediately
+  SpreadsheetApp.flush();
 
   const batches = [];
   for (var i = 0; i < cellsToProcess.length; i += BATCH_SIZE) {
@@ -849,34 +904,59 @@ function processWithAssistant(
       processedCells++;
     });
 
-    const progress = Math.round((processedCells / totalCells) * 100);
-
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      "Processed " +
-        processedCells +
-        "/" +
-        totalCells +
-        " cells (" +
-        progress +
-        "%)",
-      "Progress",
-      -1
+    // Update progress after each batch
+    userProps.setProperty(
+      "processingProgress",
+      JSON.stringify({
+        current: processedCells,
+        total: totalCells,
+        status: "processing",
+      })
     );
+    
+    // Force flush to ensure UI can read updated progress
+    SpreadsheetApp.flush();
 
     if (batchIndex < batches.length - 1) {
       Utilities.sleep(BATCH_DELAY);
     }
   }
 
-  SpreadsheetApp.getActiveSpreadsheet().toast(
-    "Completed: " + totalCells + "/" + totalCells + " cells (100%)",
-    "Progress",
-    3
-  );
-
   return {
     completed: true,
   };
+}
+
+function processWithAssistantWithProgress(
+  assistantId,
+  instructions,
+  rangeA1Notation,
+  targetColumn,
+  headerRow
+) {
+  // Don't set initial progress here - let processWithAssistant set the correct total
+  const userProps = PropertiesService.getUserProperties();
+
+  try {
+    const result = processWithAssistant(
+      assistantId,
+      instructions,
+      rangeA1Notation,
+      targetColumn,
+      headerRow
+    );
+    userProps.deleteProperty("processingProgress");
+    return result;
+  } catch (error) {
+    userProps.deleteProperty("processingProgress");
+    throw error;
+  }
+}
+
+function getProcessingProgress() {
+  const userProps = PropertiesService.getUserProperties();
+  const progress = userProps.getProperty("processingProgress");
+  return progress ? JSON.parse(progress) : null;
 }
 
 // Helper function to convert column letter to index
