@@ -31,7 +31,7 @@
     </Hosts>
     
     <DefaultSettings>
-        <SourceLocation DefaultValue="https://localhost:3000/src/taskpane.html"/>
+        <SourceLocation DefaultValue="https://04d32daf749b.ngrok.app/src/taskpane.html"/>
     </DefaultSettings>
     
     <Permissions>ReadWriteDocument</Permissions>
@@ -89,8 +89,8 @@
                 <bt:Image id="Icon.80x80" DefaultValue="https://dust.tt/static/favicon/favicon-96x96.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/src/commands.html"/>
-                <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/src/taskpane.html"/>
+                <bt:Url id="Commands.Url" DefaultValue="https://04d32daf749b.ngrok.app/src/commands.html"/>
+                <bt:Url id="Taskpane.Url" DefaultValue="https://04d32daf749b.ngrok.app/src/taskpane.html"/>
                 <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://dust.tt/docs"/>
             </bt:Urls>
             <bt:ShortStrings>
