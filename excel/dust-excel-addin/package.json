@@ -1,0 +1,20 @@
+{
+  "name": "dust-excel-addin",
+  "version": "0.1.0",
+  "description": "Dust Excel Add-in - Use AI Agents in your Excel spreadsheet",
+  "main": "src/taskpane.js",
+  "scripts": {
+    "start": "http-server -p 3000 --ssl --cert ./certs/localhost.crt --key ./certs/localhost.key",
+    "dev": "npm run start",
+    "validate": "office-addin-manifest validate manifest.xml",
+    "generate-cert": "office-addin-dev-certs install"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "office-addin-dev-certs": "^1.11.3",
+    "office-addin-manifest": "^1.12.3"
+  },
+  "author": "Dust",
+  "license": "MIT"
+}

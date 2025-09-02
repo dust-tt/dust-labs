@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Certificates (generated locally)
+certs/
+*.crt
+*.key
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Office cache
+.office/

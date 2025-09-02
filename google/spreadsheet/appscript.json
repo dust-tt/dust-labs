@@ -1,0 +1,33 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {
+    "enabledAdvancedServices": []
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Dust AI Agents for Google Sheets",
+      "logoUrl": "https://dust.tt/static/AppIcon.png",
+      "homepageTrigger": {
+        "enabled": true,
+        "runFunction": "onOpen"
+      },
+      "universalActions": [
+        {
+          "label": "Home",
+          "openLink": "https://dust.tt"
+        },
+        {
+          "label": "Privacy Policy",
+          "openLink": "https://dust.tt/platform-privacy"
+        }
+      ]
+    },
+    "sheets": {}
+  }
+}
