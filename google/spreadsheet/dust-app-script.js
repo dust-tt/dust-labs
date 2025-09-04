@@ -887,7 +887,7 @@ function processWithAssistant(
           });
 
         const appUrl =
-          "https://dust.tt/w/" +
+          getDustBaseUrl() + "/w/" +
           workspaceId +
           "/assistant/" +
           result.conversation.sId;
