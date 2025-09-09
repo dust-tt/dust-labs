@@ -14,10 +14,13 @@ Office.onReady((info) => {
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
         document.getElementById("saveSetup").onclick = saveCredentials;
         document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
-        const removeBtn = document.getElementById("removeCredentialsBtn");
-        if (removeBtn) {
-            removeBtn.onclick = removeCredentials;
-        }
+        // Set up remove button after a small delay to ensure DOM is ready
+        setTimeout(() => {
+            const removeBtn = document.getElementById("removeCredentialsBtn");
+            if (removeBtn) {
+                removeBtn.onclick = removeCredentials;
+            }
+        }, 100);
         
         // Initialize
         checkCredentialsAndInitialize();
@@ -81,6 +84,8 @@ function showCredentialSetup() {
     const removeBtn = document.getElementById("removeCredentialsBtn");
     if (removeBtn) {
         removeBtn.style.display = (existingWorkspace || existingToken) ? "block" : "none";
+        // Re-attach click handler
+        removeBtn.onclick = removeCredentials;
     }
 }
 
@@ -138,28 +143,16 @@ async function saveCredentials() {
     saveBtn.innerHTML = '<span class="spinner"></span> Validating...';
     
     try {
-        // Test credentials by fetching agents
-        const testBaseUrl = region && region.toLowerCase() === "eu" ? "https://eu.dust.tt" : "https://dust.tt";
-        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
-        
-        const response = await fetch(testBaseUrl + apiPath, {
-            method: "GET",
-            headers: {
-                "Authorization": "Bearer " + dustToken,
-                "Content-Type": "application/json"
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error("Invalid credentials. Please check your Workspace ID and API Key.");
-        }
-        
-        const data = await response.json();
-        
-        // Credentials are valid, save them
+        // Temporarily save credentials to test them
         saveToStorage("workspaceId", workspaceId);
         saveToStorage("dustToken", dustToken);
         saveToStorage("region", region);
+        
+        // Test credentials by fetching agents using the proxy
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        const data = await callDustAPI(apiPath);
+        
+        // Credentials are valid, save the configured flag
         saveToStorage("credentialsConfigured", "true");
         
         // Switch to main form
@@ -167,6 +160,12 @@ async function saveCredentials() {
         loadAssistants();
         initializeSelect2();
     } catch (error) {
+        // Remove invalid credentials
+        localStorage.removeItem("dust_excel_workspaceId");
+        localStorage.removeItem("dust_excel_dustToken");
+        localStorage.removeItem("dust_excel_region");
+        localStorage.removeItem("dust_excel_credentialsConfigured");
+        
         alert(error.message || "Failed to validate credentials. Please check your Workspace ID and API Key.");
     } finally {
         saveBtn.disabled = false;
