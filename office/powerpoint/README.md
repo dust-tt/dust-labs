@@ -40,7 +40,7 @@ This add-in allows you to use Dust AI Agents directly in your PowerPoint present
 3. Select the scope for processing:
    - **Entire Presentation**: Process all slides
    - **Current Slide**: Process only the active slide
-   - **Selected Text/Shape**: Process only selected content
+   - **Selected Text**: Process only selected content
 4. Add any additional instructions (optional)
 5. Click **Run Agent**
 6. Review the results
@@ -67,27 +67,32 @@ This add-in allows you to use Dust AI Agents directly in your PowerPoint present
 ## Troubleshooting
 
 ### Add-in doesn't appear
+
 - Make sure you're looking in the **Home** tab
 - Try reloading PowerPoint
 - Check that the manifest.xml file was uploaded correctly
 
 ### Can't connect to Dust
+
 - Verify your Workspace ID and API Key are correct
 - Check your internet connection
 - Ensure you've selected the correct region (US or EU)
 
 ### Agent list is empty
+
 - Confirm you have agents configured in your Dust workspace
 - Check that your API key has the necessary permissions
 
 ### Can't select content
-- Ensure you have text or shapes selected when using "Selected Text/Shape" option
+
+- Ensure you have text selected when using "Selected Text" option
 - For slides, make sure you're on the slide you want to process
 
 ### Results not applying
+
 - Check that you have appropriate permissions to edit the presentation
 - Try applying to a smaller selection first
-- Ensure the content type is compatible (text/shapes)
+- Ensure the content type is compatible (text)
 
 ## Support
 

@@ -1,127 +1,215 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Dust PowerPoint Add-in</title>
-    
+
     <!-- Office JavaScript API -->
-    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-    
+    <script
+      type="text/javascript"
+      src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"
+    ></script>
+
     <!-- jQuery and Select2 -->
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css"
+      rel="stylesheet"
+    />
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    
+
     <!-- Custom styles -->
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <div class="logo">
-            <svg width="96" height="24" viewBox="0 0 96 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M84 0H72V24H84V0Z" fill="#FE9C1A"/>
-                <path d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z" fill="#E2F78C"/>
-                <path d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z" fill="#FFC3DF"/>
-                <path d="M12 0H0V24H12V0Z" fill="#418B5C"/>
-                <path d="M48 0H24V12H48V0Z" fill="#E14322"/>
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z" fill="#3B82F6"/>
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z" fill="#9FDBFF"/>
-            </svg>
+      <div class="logo">
+        <svg
+          width="96"
+          height="24"
+          viewBox="0 0 96 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M84 0H72V24H84V0Z" fill="#FE9C1A" />
+          <path
+            d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z"
+            fill="#E2F78C"
+          />
+          <path
+            d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z"
+            fill="#FFC3DF"
+          />
+          <path d="M12 0H0V24H12V0Z" fill="#418B5C" />
+          <path d="M48 0H24V12H48V0Z" fill="#E14322" />
+          <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z"
+            fill="#3B82F6"
+          />
+          <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z"
+            fill="#9FDBFF"
+          />
+        </svg>
+      </div>
+
+      <h2 class="main-title">Use AI Agents in your<br />presentations</h2>
+
+      <!-- Credential Setup Panel -->
+      <div id="credentialSetup" class="credential-setup">
+        <p class="setup-message">
+          To get started, please configure your Dust credentials
+        </p>
+        <div
+          id="credentialError"
+          class="error-message"
+          style="display: none"
+        ></div>
+        <div class="form-group">
+          <label class="form-label">Workspace ID:</label>
+          <input
+            type="text"
+            id="workspaceId"
+            class="form-input"
+            placeholder="Enter your Dust Workspace ID"
+          />
         </div>
-        
-        <h2 class="main-title">Use AI Agents in your<br>presentations</h2>
-        
-        <!-- Credential Setup Panel -->
-        <div id="credentialSetup" class="credential-setup">
-            <p class="setup-message">To get started, please configure your Dust credentials</p>
-            <div id="credentialError" class="error-message" style="display: none;"></div>
-            <div class="form-group">
-                <label class="form-label">Workspace ID:</label>
-                <input type="text" id="workspaceId" class="form-input" placeholder="Enter your Dust Workspace ID">
-            </div>
-            <div class="form-group">
-                <label class="form-label">API Key:</label>
-                <input type="password" id="dustToken" class="form-input" placeholder="Enter your Dust API Key">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Region (optional):</label>
-                <input type="text" id="region" class="form-input" placeholder="Leave empty for US or enter 'eu' for EU">
-            </div>
-            <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
-            <div id="removeConfirmation" style="display: none; margin-top: 12px;">
-                <p class="confirm-message">Are you sure you want to remove your credentials?</p>
-                <div style="display: flex; gap: 8px;">
-                    <button id="confirmRemove" class="btn btn-danger" style="flex: 1;">Yes, Remove</button>
-                    <button id="cancelRemove" class="btn btn-secondary" style="flex: 1;">Cancel</button>
-                </div>
-            </div>
-            <button id="removeCredentialsBtn" class="btn btn-danger" style="display: none; margin-top: 12px;">Remove Credentials</button>
+        <div class="form-group">
+          <label class="form-label">API Key:</label>
+          <input
+            type="password"
+            id="dustToken"
+            class="form-input"
+            placeholder="Enter your Dust API Key"
+          />
         </div>
-        
-        <!-- Main Form (hidden by default) -->
-        <form id="myForm" style="display: none;">
-            <div class="form-group">
-                <label class="form-label">Select agent</label>
-                <div class="search-container">
-                    <select id="assistant" name="assistant" required disabled>
-                        <option value=""></option>
-                    </select>
-                    <div class="search-icon">🔍</div>
-                </div>
-                <div id="loadError" class="error">Failed to load agents</div>
-            </div>
-            
-            <!-- Scope Selection for PowerPoint -->
-            <div class="form-group">
-                <label class="form-label">Apply to:</label>
-                <div class="scope-options">
-                    <label class="radio-label">
-                        <input type="radio" name="scope" value="presentation" checked>
-                        <span>Entire Presentation</span>
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="scope" value="slide">
-                        <span>Current Slide</span>
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="scope" value="selection">
-                        <span>Selected Text/Shape</span>
-                    </label>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Additional instructions (optional)</label>
-                <textarea id="instructions" name="instructions" placeholder="e.g., 'Summarize each slide in 2 sentences'"></textarea>
-            </div>
-            
-            <div id="status"></div>
-            <button type="submit" class="btn btn-primary" id="submitBtn">Run</button>
-            
-            <!-- Update Credentials Button (hidden by default) -->
-            <button id="updateCredentialsBtn" class="btn btn-secondary" style="display: none; margin-top: 16px; width: 100%;">Update Credentials</button>
-        </form>
-        
-        <div class="version">v0.1</div>
+        <div class="form-group">
+          <label class="form-label">Region (optional):</label>
+          <input
+            type="text"
+            id="region"
+            class="form-input"
+            placeholder="Leave empty for US or enter 'eu' for EU"
+          />
+        </div>
+        <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
+        <div id="removeConfirmation" style="display: none; margin-top: 12px">
+          <p class="confirm-message">
+            Are you sure you want to remove your credentials?
+          </p>
+          <div style="display: flex; gap: 8px">
+            <button id="confirmRemove" class="btn btn-danger" style="flex: 1">
+              Yes, Remove
+            </button>
+            <button id="cancelRemove" class="btn btn-secondary" style="flex: 1">
+              Cancel
+            </button>
+          </div>
+        </div>
+        <button
+          id="removeCredentialsBtn"
+          class="btn btn-danger"
+          style="display: none; margin-top: 12px"
+        >
+          Remove Credentials
+        </button>
+      </div>
+
+      <!-- Main Form (hidden by default) -->
+      <form id="myForm" style="display: none">
+        <div class="form-group">
+          <label class="form-label">Select agent</label>
+          <div class="search-container">
+            <select id="assistant" name="assistant" required disabled>
+              <option value=""></option>
+            </select>
+            <div class="search-icon">🔍</div>
+          </div>
+          <div id="loadError" class="error">Failed to load agents</div>
+        </div>
+
+        <!-- Scope Selection for PowerPoint -->
+        <div class="form-group">
+          <label class="form-label">Apply to:</label>
+          <div class="scope-options">
+            <label class="radio-label">
+              <input type="radio" name="scope" value="presentation" checked />
+              <span>Entire Presentation</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="scope" value="slide" />
+              <span>Current Slide</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="scope" value="selection" />
+              <span>Selected Text</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Additional instructions (optional)</label>
+          <textarea
+            id="instructions"
+            name="instructions"
+            placeholder="e.g., 'Summarize each slide in 2 sentences'"
+          ></textarea>
+        </div>
+
+        <div id="status"></div>
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+          Run
+        </button>
+
+        <!-- Update Credentials Button (hidden by default) -->
+        <button
+          id="updateCredentialsBtn"
+          class="btn btn-secondary"
+          style="display: none; margin-top: 16px; width: 100%"
+        >
+          Update Credentials
+        </button>
+      </form>
+
+      <div class="version">v0.1</div>
     </div>
-    
+
     <!-- Custom Confirmation Modal -->
-    <div id="confirmationModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3 class="modal-title">Confirm Processing</h3>
-            <p id="confirmationMessage" class="modal-message"></p>
-            <div class="modal-buttons">
-                <button id="confirmProcessBtn" class="btn btn-primary" style="margin-top: 0;">Continue</button>
-                <button id="cancelProcessBtn" class="btn btn-secondary" style="margin-top: 0;">Cancel</button>
-            </div>
+    <div id="confirmationModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <h3 class="modal-title">Confirm Processing</h3>
+        <p id="confirmationMessage" class="modal-message"></p>
+        <div class="modal-buttons">
+          <button
+            id="confirmProcessBtn"
+            class="btn btn-primary"
+            style="margin-top: 0"
+          >
+            Continue
+          </button>
+          <button
+            id="cancelProcessBtn"
+            class="btn btn-secondary"
+            style="margin-top: 0"
+          >
+            Cancel
+          </button>
         </div>
+      </div>
     </div>
-    
+
     <!-- JavaScript -->
     <script src="dust-api.js"></script>
     <script src="taskpane.js"></script>
-</body>
+  </body>
 </html>
