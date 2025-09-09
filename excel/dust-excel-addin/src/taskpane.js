@@ -111,19 +111,8 @@ async function loadAssistants() {
     }
     
     try {
-        const BASE_URL = getDustBaseUrl() + "/api/v1/w/" + workspaceId;
-        const response = await fetch(BASE_URL + "/assistant/agent_configurations", {
-            method: "GET",
-            headers: {
-                "Authorization": "Bearer " + token
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`API returned ${response.status}`);
-        }
-        
-        const data = await response.json();
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        const data = await callDustAPI(apiPath);
         const assistants = data.agentConfigurations;
         
         const sortedAssistants = assistants.sort((a, b) => a.name.localeCompare(b.name));
@@ -301,7 +290,6 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
         throw new Error("Please configure your Dust credentials first");
     }
     
-    const BASE_URL = getDustBaseUrl() + "/api/v1/w/" + workspaceId;
     
     await Excel.run(async (context) => {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
@@ -403,20 +391,14 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                 };
                 
                 try {
-                    const response = await fetch(BASE_URL + "/assistant/conversations", {
+                    const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+                    const result = await callDustAPI(apiPath, {
                         method: "POST",
+                        body: payload,
                         headers: {
-                            "Authorization": "Bearer " + token,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify(payload)
+                            "Authorization": "Bearer " + token
+                        }
                     });
-                    
-                    if (!response.ok) {
-                        throw new Error(`API error: ${response.status}`);
-                    }
-                    
-                    const result = await response.json();
                     const content = result.conversation.content;
                     
                     const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
