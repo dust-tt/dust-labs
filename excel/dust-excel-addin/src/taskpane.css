@@ -14,7 +14,7 @@ body {
     background-color: white;
     min-height: 100vh;
     position: relative;
-    padding-bottom: 60px;
+    padding-bottom: 48px;
 }
 
 .logo {
@@ -258,13 +258,6 @@ textarea {
     color: #9ca3af;
 }
 
-.update-credentials-btn {
-    position: absolute;
-    bottom: 60px;
-    left: 24px;
-    right: 24px;
-    width: calc(100% - 48px);
-}
 
 .error-message {
     background-color: #fee2e2;
@@ -274,5 +267,12 @@ textarea {
     margin-bottom: 16px;
     font-size: 14px;
     border: 1px solid #fecaca;
+}
+
+.confirm-message {
+    color: #374151;
+    font-size: 14px;
+    margin-bottom: 12px;
+    text-align: center;
 }
 

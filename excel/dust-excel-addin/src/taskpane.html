@@ -51,6 +51,13 @@
                 <input type="text" id="region" class="form-input" placeholder="Leave empty for US or enter 'eu' for EU">
             </div>
             <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
+            <div id="removeConfirmation" style="display: none; margin-top: 12px;">
+                <p class="confirm-message">Are you sure you want to remove your credentials?</p>
+                <div style="display: flex; gap: 8px;">
+                    <button id="confirmRemove" class="btn btn-danger" style="flex: 1;">Yes, Remove</button>
+                    <button id="cancelRemove" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                </div>
+            </div>
             <button id="removeCredentialsBtn" class="btn btn-danger" style="display: none; margin-top: 12px;">Remove Credentials</button>
         </div>
         
@@ -97,10 +104,10 @@
             
             <div id="status"></div>
             <button type="submit" class="btn btn-primary" id="submitBtn">Run</button>
+            
+            <!-- Update Credentials Button (hidden by default) -->
+            <button id="updateCredentialsBtn" class="btn btn-secondary" style="display: none; margin-top: 16px; width: 100%;">Update Credentials</button>
         </form>
-        
-        <!-- Update Credentials Button (hidden by default) -->
-        <button id="updateCredentialsBtn" class="btn btn-secondary update-credentials-btn" style="display: none;">Update Credentials</button>
         
         <div class="version">v0.1</div>
     </div>

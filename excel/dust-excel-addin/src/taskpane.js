@@ -14,7 +14,9 @@ Office.onReady((info) => {
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
         document.getElementById("saveSetup").onclick = saveCredentials;
         document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
-        document.getElementById("removeCredentialsBtn").onclick = removeCredentials;
+        document.getElementById("removeCredentialsBtn").onclick = showRemoveConfirmation;
+        document.getElementById("confirmRemove").onclick = removeCredentials;
+        document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
         
         // Initialize
         checkCredentialsAndInitialize();
@@ -94,55 +96,63 @@ function showMainForm() {
     document.getElementById("updateCredentialsBtn").style.display = "block";
 }
 
+// Show remove confirmation
+function showRemoveConfirmation() {
+    document.getElementById("removeCredentialsBtn").style.display = "none";
+    document.getElementById("removeConfirmation").style.display = "block";
+}
+
+// Hide remove confirmation
+function hideRemoveConfirmation() {
+    document.getElementById("removeConfirmation").style.display = "none";
+    document.getElementById("removeCredentialsBtn").style.display = "block";
+}
+
 // Remove credentials
 function removeCredentials() {
-    if (confirm("Are you sure you want to remove your Dust credentials?")) {
-        // Clear all stored credentials
-        localStorage.removeItem("dust_excel_workspaceId");
-        localStorage.removeItem("dust_excel_dustToken");
-        localStorage.removeItem("dust_excel_region");
-        localStorage.removeItem("dust_excel_credentialsConfigured");
-        
-        // Clear input fields
-        document.getElementById("workspaceId").value = "";
-        document.getElementById("dustToken").value = "";
-        document.getElementById("region").value = "";
-        
-        // Hide remove button
-        const removeBtn = document.getElementById("removeCredentialsBtn");
-        if (removeBtn) {
-            removeBtn.style.display = "none";
-        }
-        
-        // Hide error message
-        const errorDiv = document.getElementById("credentialError");
-        if (errorDiv) {
-            errorDiv.style.display = "none";
-        }
-        
-        // Clear the assistant dropdown
-        const select = document.getElementById("assistant");
-        select.innerHTML = '<option value=""></option>';
-        select.disabled = true;
-        
-        // Reset Select2
-        $("#assistant").select2({
-            placeholder: "Loading agents...",
-            allowClear: true,
-            width: "100%"
-        });
-        
-        // Clear any error messages in the main form
-        const loadError = document.getElementById("loadError");
-        if (loadError) {
-            loadError.style.display = "none";
-        }
-        
-        // Show credential setup as if starting fresh
-        document.getElementById("credentialSetup").style.display = "block";
-        document.getElementById("myForm").style.display = "none";
-        document.getElementById("updateCredentialsBtn").style.display = "none";
+    // Clear all stored credentials
+    localStorage.removeItem("dust_excel_workspaceId");
+    localStorage.removeItem("dust_excel_dustToken");
+    localStorage.removeItem("dust_excel_region");
+    localStorage.removeItem("dust_excel_credentialsConfigured");
+    
+    // Clear input fields
+    document.getElementById("workspaceId").value = "";
+    document.getElementById("dustToken").value = "";
+    document.getElementById("region").value = "";
+    
+    // Hide remove button and confirmation
+    document.getElementById("removeCredentialsBtn").style.display = "none";
+    document.getElementById("removeConfirmation").style.display = "none";
+    
+    // Hide error message
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
     }
+    
+    // Clear the assistant dropdown
+    const select = document.getElementById("assistant");
+    select.innerHTML = '<option value=""></option>';
+    select.disabled = true;
+    
+    // Reset Select2
+    $("#assistant").select2({
+        placeholder: "Loading agents...",
+        allowClear: true,
+        width: "100%"
+    });
+    
+    // Clear any error messages in the main form
+    const loadError = document.getElementById("loadError");
+    if (loadError) {
+        loadError.style.display = "none";
+    }
+    
+    // Show credential setup as if starting fresh
+    document.getElementById("credentialSetup").style.display = "block";
+    document.getElementById("myForm").style.display = "none";
+    document.getElementById("updateCredentialsBtn").style.display = "none";
 }
 
 async function saveCredentials() {
