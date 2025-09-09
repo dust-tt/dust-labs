@@ -1,21 +1,26 @@
 // Dust API wrapper that uses the Vercel proxy to avoid CORS issues
 
-// Get the proxy URL - this will be your Vercel deployment URL
+// Helper function to get from storage (compatible with both Excel and PowerPoint)
+function getDustStorageValue(key) {
+    // Try Excel storage first
+    let value = localStorage.getItem(`dust_excel_${key}`);
+    if (value) return value;
+    
+    // Fall back to PowerPoint storage
+    return localStorage.getItem(`dust_powerpoint_${key}`);
+}
+
+// Get the proxy URL
 function getProxyUrl() {
-    // In development, use localhost with Vercel dev server
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        // For local development with Vercel dev server (default port 3000)
-        // Note: You'll need to run `vercel dev` instead of `npm start` to test the proxy locally
-        return 'http://localhost:3000/api/dust-proxy';
-    }
-    // In production, use the relative path (works when deployed to Vercel)
+    // Always use relative path - works in both development and production
+    // Vercel automatically handles the /api routes
     return '/api/dust-proxy';
 }
 
 // Helper function to make API calls through the proxy
 async function callDustAPI(path, options = {}) {
     const proxyUrl = getProxyUrl();
-    const region = getFromStorage('region');
+    const region = getDustStorageValue('region');
     
     // Build query parameters
     const params = new URLSearchParams({ path });
@@ -23,7 +28,7 @@ async function callDustAPI(path, options = {}) {
     // Prepare headers
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': options.headers?.Authorization || `Bearer ${getFromStorage('dustToken')}`,
+        'Authorization': options.headers?.Authorization || `Bearer ${getDustStorageValue('dustToken')}`,
     };
     
     if (region) {
