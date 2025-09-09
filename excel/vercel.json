@@ -1,0 +1,39 @@
+{
+  "rewrites": [
+    {
+      "source": "/excel/dust-api.js",
+      "destination": "/src/shared/dust-api.js"
+    },
+    {
+      "source": "/powerpoint/dust-api.js",
+      "destination": "/src/shared/dust-api.js"
+    },
+    {
+      "source": "/excel/:path*",
+      "destination": "/src/excel/:path*"
+    },
+    {
+      "source": "/powerpoint/:path*",
+      "destination": "/src/powerpoint/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-Requested-With, Content-Type, Authorization"
+        }
+      ]
+    }
+  ]
+}

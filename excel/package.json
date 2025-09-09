@@ -1,12 +1,13 @@
 {
-  "name": "dust-excel-addin",
+  "name": "dust-office-addins",
   "version": "0.1.0",
-  "description": "Dust Excel Add-in - Use AI Agents in your Excel spreadsheet",
-  "main": "src/taskpane.js",
+  "description": "Dust Office Add-ins - Use AI Agents in Excel and PowerPoint",
   "scripts": {
     "start": "http-server -p 3000 --ssl --cert ./certs/localhost.crt --key ./certs/localhost.key",
     "dev": "npm run start",
-    "validate": "office-addin-manifest validate manifest.xml",
+    "validate:excel": "office-addin-manifest validate excel/manifest.xml",
+    "validate:powerpoint": "office-addin-manifest validate powerpoint/manifest.xml",
+    "validate:all": "npm run validate:excel && npm run validate:powerpoint",
     "generate-cert": "office-addin-dev-certs install && npm run copy-certs",
     "copy-certs": "mkdir -p certs && cp ~/.office-addin-dev-certs/localhost.crt ./certs/ && cp ~/.office-addin-dev-certs/localhost.key ./certs/"
   },

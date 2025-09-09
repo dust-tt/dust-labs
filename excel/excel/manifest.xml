@@ -23,7 +23,7 @@
     <AppDomains>
         <AppDomain>https://dust.tt</AppDomain>
         <AppDomain>https://eu.dust.tt</AppDomain>
-        <AppDomain>https://dust-excel-addin.vercel.app</AppDomain>
+        <AppDomain>https://dust-office-addins.vercel.app</AppDomain>
     </AppDomains>
     
     <!-- Host and Permissions -->
@@ -32,7 +32,7 @@
     </Hosts>
     
     <DefaultSettings>
-        <SourceLocation DefaultValue="https://dust-excel-addin.vercel.app/src/taskpane.html"/>
+        <SourceLocation DefaultValue="https://dust-office-addins.vercel.app/excel/taskpane.html"/>
     </DefaultSettings>
     
     <Permissions>ReadWriteDocument</Permissions>
@@ -90,8 +90,8 @@
                 <bt:Image id="Icon.80x80" DefaultValue="https://dust.tt/static/favicon@3x.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="Commands.Url" DefaultValue="https://dust-excel-addin.vercel.app/src/commands.html"/>
-                <bt:Url id="Taskpane.Url" DefaultValue="https://dust-excel-addin.vercel.app/src/taskpane.html"/>
+                <bt:Url id="Commands.Url" DefaultValue="https://dust-office-addins.vercel.app/excel/commands.html"/>
+                <bt:Url id="Taskpane.Url" DefaultValue="https://dust-office-addins.vercel.app/excel/taskpane.html"/>
                 <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://dust.tt/docs"/>
             </bt:Urls>
             <bt:ShortStrings>

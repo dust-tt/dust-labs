@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dust PowerPoint Add-in</title>
+    
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    
+    <!-- jQuery and Select2 -->
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    
+    <!-- Custom styles -->
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <svg width="96" height="24" viewBox="0 0 96 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M84 0H72V24H84V0Z" fill="#FE9C1A"/>
+                <path d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z" fill="#E2F78C"/>
+                <path d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z" fill="#FFC3DF"/>
+                <path d="M12 0H0V24H12V0Z" fill="#418B5C"/>
+                <path d="M48 0H24V12H48V0Z" fill="#E14322"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z" fill="#3B82F6"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z" fill="#9FDBFF"/>
+            </svg>
+        </div>
+        
+        <h2 class="main-title">Use AI Agents in your<br>presentations</h2>
+        
+        <!-- Credential Setup Panel -->
+        <div id="credentialSetup" class="credential-setup">
+            <p class="setup-message">To get started, please configure your Dust credentials</p>
+            <div id="credentialError" class="error-message" style="display: none;"></div>
+            <div class="form-group">
+                <label class="form-label">Workspace ID:</label>
+                <input type="text" id="workspaceId" class="form-input" placeholder="Enter your Dust Workspace ID">
+            </div>
+            <div class="form-group">
+                <label class="form-label">API Key:</label>
+                <input type="password" id="dustToken" class="form-input" placeholder="Enter your Dust API Key">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Region (optional):</label>
+                <select id="regionSelect" class="form-input">
+                    <option value="">Default (US)</option>
+                    <option value="eu">Europe (EU)</option>
+                </select>
+            </div>
+            <button id="saveCredentials" class="run-button">Save Credentials</button>
+        </div>
+        
+        <!-- Main Panel (hidden initially) -->
+        <div id="mainPanel" class="main-panel" style="display: none;">
+            <!-- User Profile -->
+            <div class="user-profile">
+                <span id="userWorkspace" class="user-workspace"></span>
+                <button id="changeUser" class="change-user-btn">Change</button>
+            </div>
+            
+            <!-- Agent Selection -->
+            <div class="form-group">
+                <label class="form-label">Select Agent:</label>
+                <select id="agentSelect" class="agent-select">
+                    <option value="">Loading agents...</option>
+                </select>
+            </div>
+            
+            <!-- Scope Selection for PowerPoint -->
+            <div class="form-group">
+                <label class="form-label">Apply to:</label>
+                <div class="scope-options">
+                    <label class="radio-label">
+                        <input type="radio" name="scope" value="presentation" checked>
+                        <span>Entire Presentation</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="scope" value="slide">
+                        <span>Current Slide</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="scope" value="selection">
+                        <span>Selected Text/Shape</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Instructions Input -->
+            <div class="form-group">
+                <label class="form-label">Instructions (optional):</label>
+                <textarea id="instructionsInput" class="instructions-input" 
+                          placeholder="Enter additional instructions for the agent..."></textarea>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button id="runAgent" class="run-button">Run Agent</button>
+                <button id="cancelRun" class="cancel-button" style="display: none;">Cancel</button>
+            </div>
+            
+            <!-- Progress Section -->
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <div class="progress-header">
+                    <span class="progress-title">Processing...</span>
+                    <div class="progress-spinner"></div>
+                </div>
+                <div id="progressMessage" class="progress-message"></div>
+            </div>
+            
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section" style="display: none;">
+                <h3 class="results-title">Results</h3>
+                <div id="resultsContent" class="results-content"></div>
+                <div class="button-group">
+                    <button id="applyResults" class="run-button">Apply to Presentation</button>
+                    <button id="discardResults" class="cancel-button">Discard</button>
+                </div>
+            </div>
+            
+            <!-- Error Section -->
+            <div id="errorSection" class="error-section" style="display: none;">
+                <div id="errorMessage" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Load JavaScript -->
+    <script src="dust-api.js"></script>
+    <script src="taskpane.js"></script>
+</body>
+</html>
