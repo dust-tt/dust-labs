@@ -2,6 +2,7 @@
 
 const DUST_VERSION = "0.1";
 let processingProgress = { current: 0, total: 0, status: "idle" };
+let processingCancelled = false;
 
 // Initialize Office
 Office.onReady((info) => {
@@ -14,6 +15,7 @@ Office.onReady((info) => {
       showRemoveConfirmation;
     document.getElementById("confirmRemove").onclick = removeCredentials;
     document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
+    document.getElementById("cancelBtn").onclick = cancelProcessing;
 
     // Initialize
     checkCredentialsAndInitialize();
@@ -347,6 +349,11 @@ async function handleSubmit(e) {
   document.getElementById("status").innerHTML =
     '<div class="spinner"></div> Extracting content...';
 
+  // Show cancel button, hide submit button
+  document.getElementById("submitBtn").style.display = "none";
+  document.getElementById("cancelBtn").style.display = "block";
+  processingCancelled = false;
+
   try {
     await processWithAssistant(
       assistantSelect.value,
@@ -354,15 +361,22 @@ async function handleSubmit(e) {
       scope
     );
 
-    document.getElementById("submitBtn").disabled = false;
-    document.getElementById("status").innerHTML = "✅ Processing complete";
-    setTimeout(() => {
-      document.getElementById("status").innerHTML = "";
-    }, 3000);
+    if (!processingCancelled) {
+      document.getElementById("status").innerHTML = "✅ Processing complete";
+      setTimeout(() => {
+        document.getElementById("status").innerHTML = "";
+      }, 3000);
+    }
   } catch (error) {
+    if (!processingCancelled) {
+      document.getElementById("status").textContent =
+        "❌ Error: " + error.message;
+    }
+  } finally {
+    // Reset buttons
     document.getElementById("submitBtn").disabled = false;
-    document.getElementById("status").textContent =
-      "❌ Error: " + error.message;
+    document.getElementById("submitBtn").style.display = "block";
+    document.getElementById("cancelBtn").style.display = "none";
   }
 }
 
@@ -562,6 +576,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
     // Process in batches to avoid rate limiting
     for (let i = 0; i < textBlocksToProcess.length; i += BATCH_SIZE) {
+      // Check if processing was cancelled
+      if (processingCancelled) {
+        throw new Error("Processing cancelled by user");
+      }
+      
       const batch = textBlocksToProcess.slice(
         i,
         Math.min(i + BATCH_SIZE, textBlocksToProcess.length)
@@ -569,6 +588,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       // Process each text block in the batch
       for (let textBlock of batch) {
+        // Check cancellation for each item
+        if (processingCancelled) {
+          throw new Error("Processing cancelled by user");
+        }
+        
         try {
           // Prepare the content for the API
           const inputContent =
@@ -724,4 +748,20 @@ function showConfirmationDialog(textBlockCount) {
     confirmBtn.addEventListener("click", handleConfirm);
     cancelBtn.addEventListener("click", handleCancel);
   });
+}
+
+// Cancel processing function
+function cancelProcessing() {
+  processingCancelled = true;
+  document.getElementById("status").innerHTML = "⚠️ Cancelling...";
+  
+  // Hide cancel button immediately
+  document.getElementById("cancelBtn").style.display = "none";
+  
+  setTimeout(() => {
+    document.getElementById("status").innerHTML = "Processing cancelled";
+    setTimeout(() => {
+      document.getElementById("status").innerHTML = "";
+    }, 2000);
+  }, 500);
 }

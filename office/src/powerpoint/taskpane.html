@@ -143,16 +143,16 @@
           <label class="form-label">Apply to:</label>
           <div class="scope-options">
             <label class="radio-label">
-              <input type="radio" name="scope" value="presentation" checked />
-              <span>Entire Presentation</span>
+              <input type="radio" name="scope" value="selection" checked />
+              <span>Selected Text</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="scope" value="slide" />
               <span>Current Slide</span>
             </label>
             <label class="radio-label">
-              <input type="radio" name="scope" value="selection" />
-              <span>Selected Text</span>
+              <input type="radio" name="scope" value="presentation" />
+              <span>Entire Presentation</span>
             </label>
           </div>
         </div>
@@ -169,6 +169,9 @@
         <div id="status"></div>
         <button type="submit" class="btn btn-primary" id="submitBtn">
           Run
+        </button>
+        <button type="button" class="btn btn-danger" id="cancelBtn" style="display: none; margin-top: 16px;">
+          Cancel Processing
         </button>
 
         <!-- Update Credentials Button (hidden by default) -->
