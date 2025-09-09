@@ -541,27 +541,6 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                     
                     const targetCell = sheet.getCell(item.row, item.col);
                     targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
-                    
-                    // Add conversation URL as comment
-                    const baseUrl = getDustBaseUrl();
-                    const appUrl = `${baseUrl}/w/${workspaceId}/assistant/${result.conversation.sId}`;
-                    
-                    // Load comments collection and add comment with URL
-                    targetCell.load("comments");
-                    await context.sync();
-                    
-                    // Clear any existing comments first
-                    const comments = targetCell.comments;
-                    comments.load("items");
-                    await context.sync();
-                    
-                    for (let i = comments.items.length - 1; i >= 0; i--) {
-                        comments.items[i].delete();
-                    }
-                    
-                    // Add new comment with conversation URL
-                    comments.add("Dust Conversation", `View conversation: ${appUrl}`);
-                    
                     targetCell.format.fill.color = "#f0f9ff"; // Light blue background
                     
                 } catch (error) {
