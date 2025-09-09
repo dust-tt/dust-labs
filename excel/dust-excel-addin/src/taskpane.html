@@ -34,9 +34,26 @@
         
         <h2 class="main-title">Use AI Agents in your<br>spreadsheet</h2>
         
-        <button id="setupBtn" class="btn btn-setup">Setup Dust Credentials</button>
+        <!-- Credential Setup Panel -->
+        <div id="credentialSetup" class="credential-setup">
+            <p class="setup-message">To get started, please configure your Dust credentials</p>
+            <div class="form-group">
+                <label class="form-label">Workspace ID:</label>
+                <input type="text" id="workspaceId" class="form-input" placeholder="Enter your Dust Workspace ID">
+            </div>
+            <div class="form-group">
+                <label class="form-label">API Key:</label>
+                <input type="password" id="dustToken" class="form-input" placeholder="Enter your Dust API Key">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Region (optional):</label>
+                <input type="text" id="region" class="form-input" placeholder="Leave empty for US or enter 'eu' for EU">
+            </div>
+            <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
+        </div>
         
-        <form id="myForm">
+        <!-- Main Form (hidden by default) -->
+        <form id="myForm" style="display: none;">
             <div class="form-group">
                 <label class="form-label">Select agent</label>
                 <div class="search-container">
@@ -80,30 +97,10 @@
             <button type="submit" class="btn btn-primary" id="submitBtn">Run</button>
         </form>
         
+        <!-- Update Credentials Button (hidden by default) -->
+        <button id="updateCredentialsBtn" class="btn btn-secondary update-credentials-btn" style="display: none;">Update Credentials</button>
+        
         <div class="version">v0.1</div>
-    </div>
-    
-    <!-- Setup Dialog -->
-    <div id="setupDialog" class="dialog" style="display: none;">
-        <div class="dialog-content">
-            <h3>Setup Dust</h3>
-            <div class="form-group">
-                <label class="form-label">Workspace ID:</label>
-                <input type="text" id="workspaceId" placeholder="Enter your Dust Workspace ID">
-            </div>
-            <div class="form-group">
-                <label class="form-label">API Key:</label>
-                <input type="password" id="dustToken" placeholder="Enter your Dust API Key">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Region (optional):</label>
-                <input type="text" id="region" placeholder="Leave empty for US or enter 'eu' for EU">
-            </div>
-            <div class="dialog-buttons">
-                <button class="btn btn-secondary" id="cancelSetup">Cancel</button>
-                <button class="btn btn-primary" id="saveSetup">Save</button>
-            </div>
-        </div>
     </div>
     
     <!-- JavaScript -->

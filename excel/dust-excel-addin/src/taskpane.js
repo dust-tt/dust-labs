@@ -6,7 +6,6 @@ let processingProgress = { current: 0, total: 0, status: "idle" };
 // Initialize Office
 Office.onReady((info) => {
     if (info.host === Office.HostType.Excel) {
-        document.getElementById("setupBtn").onclick = showSetupDialog;
         document.getElementById("selectCellsBtn").onclick = useSelection;
         document.getElementById("selectTargetBtn").onclick = useTargetSelection;
         document.getElementById("cellRange").addEventListener("input", function() {
@@ -14,12 +13,10 @@ Office.onReady((info) => {
         });
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
         document.getElementById("saveSetup").onclick = saveCredentials;
-        document.getElementById("cancelSetup").onclick = hideSetupDialog;
+        document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
         
         // Initialize
-        loadCredentials();
-        loadAssistants();
-        initializeSelect2();
+        checkCredentialsAndInitialize();
     }
 });
 
@@ -46,17 +43,39 @@ function getFromStorage(key) {
     return localStorage.getItem(`dust_excel_${key}`);
 }
 
-// Credentials management
-function showSetupDialog() {
-    document.getElementById("setupDialog").style.display = "flex";
+// Check credentials and initialize the appropriate view
+function checkCredentialsAndInitialize() {
+    const workspaceId = getFromStorage("workspaceId");
+    const dustToken = getFromStorage("dustToken");
+    
+    if (workspaceId && dustToken) {
+        // Credentials exist, show the main form
+        showMainForm();
+        loadAssistants();
+        initializeSelect2();
+    } else {
+        // No credentials, show setup panel
+        showCredentialSetup();
+    }
+}
+
+// Show credential setup panel
+function showCredentialSetup() {
+    document.getElementById("credentialSetup").style.display = "block";
+    document.getElementById("myForm").style.display = "none";
+    document.getElementById("updateCredentialsBtn").style.display = "none";
+    
     // Load existing credentials if any
     document.getElementById("workspaceId").value = getFromStorage("workspaceId") || "";
     document.getElementById("dustToken").value = getFromStorage("dustToken") || "";
     document.getElementById("region").value = getFromStorage("region") || "";
 }
 
-function hideSetupDialog() {
-    document.getElementById("setupDialog").style.display = "none";
+// Show main form
+function showMainForm() {
+    document.getElementById("credentialSetup").style.display = "none";
+    document.getElementById("myForm").style.display = "block";
+    document.getElementById("updateCredentialsBtn").style.display = "block";
 }
 
 function saveCredentials() {
@@ -68,22 +87,17 @@ function saveCredentials() {
         saveToStorage("workspaceId", workspaceId);
         saveToStorage("dustToken", dustToken);
         saveToStorage("region", region);
-        hideSetupDialog();
+        saveToStorage("credentialsConfigured", "true");
+        
+        // Switch to main form
+        showMainForm();
         loadAssistants();
+        initializeSelect2();
     } else {
         alert("Please enter both Workspace ID and API Key");
     }
 }
 
-function loadCredentials() {
-    const workspaceId = getFromStorage("workspaceId");
-    const dustToken = getFromStorage("dustToken");
-    
-    if (!workspaceId || !dustToken) {
-        document.getElementById("loadError").textContent = "Please configure Dust credentials first";
-        document.getElementById("loadError").style.display = "block";
-    }
-}
 
 // Dust API functions
 function getDustBaseUrl() {
