@@ -134,6 +134,16 @@ body {
     background-color: #059669;
 }
 
+.btn-danger {
+    background-color: #ef4444;
+    color: white;
+    width: 100%;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
 textarea {
     width: 100%;
     padding: 12px 16px;
@@ -153,6 +163,7 @@ textarea {
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-right: 8px;
+    vertical-align: middle;
 }
 
 @keyframes spin {

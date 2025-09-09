@@ -14,6 +14,10 @@ Office.onReady((info) => {
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
         document.getElementById("saveSetup").onclick = saveCredentials;
         document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
+        const removeBtn = document.getElementById("removeCredentialsBtn");
+        if (removeBtn) {
+            removeBtn.onclick = removeCredentials;
+        }
         
         // Initialize
         checkCredentialsAndInitialize();
@@ -66,9 +70,18 @@ function showCredentialSetup() {
     document.getElementById("updateCredentialsBtn").style.display = "none";
     
     // Load existing credentials if any
-    document.getElementById("workspaceId").value = getFromStorage("workspaceId") || "";
-    document.getElementById("dustToken").value = getFromStorage("dustToken") || "";
+    const existingWorkspace = getFromStorage("workspaceId");
+    const existingToken = getFromStorage("dustToken");
+    
+    document.getElementById("workspaceId").value = existingWorkspace || "";
+    document.getElementById("dustToken").value = existingToken || "";
     document.getElementById("region").value = getFromStorage("region") || "";
+    
+    // Show/hide remove button based on whether credentials exist
+    const removeBtn = document.getElementById("removeCredentialsBtn");
+    if (removeBtn) {
+        removeBtn.style.display = (existingWorkspace || existingToken) ? "block" : "none";
+    }
 }
 
 // Show main form
@@ -78,12 +91,72 @@ function showMainForm() {
     document.getElementById("updateCredentialsBtn").style.display = "block";
 }
 
-function saveCredentials() {
+// Remove credentials
+function removeCredentials() {
+    if (confirm("Are you sure you want to remove your Dust credentials?")) {
+        // Clear all stored credentials
+        localStorage.removeItem("dust_excel_workspaceId");
+        localStorage.removeItem("dust_excel_dustToken");
+        localStorage.removeItem("dust_excel_region");
+        localStorage.removeItem("dust_excel_credentialsConfigured");
+        
+        // Clear input fields
+        document.getElementById("workspaceId").value = "";
+        document.getElementById("dustToken").value = "";
+        document.getElementById("region").value = "";
+        
+        // Hide remove button
+        const removeBtn = document.getElementById("removeCredentialsBtn");
+        if (removeBtn) {
+            removeBtn.style.display = "none";
+        }
+        
+        // Clear the assistant dropdown
+        const select = document.getElementById("assistant");
+        select.innerHTML = '<option value=""></option>';
+        select.disabled = true;
+        
+        // Show credential setup
+        showCredentialSetup();
+    }
+}
+
+async function saveCredentials() {
     const workspaceId = document.getElementById("workspaceId").value;
     const dustToken = document.getElementById("dustToken").value;
     const region = document.getElementById("region").value;
     
-    if (workspaceId && dustToken) {
+    if (!workspaceId || !dustToken) {
+        alert("Please enter both Workspace ID and API Key");
+        return;
+    }
+    
+    // Show loading state
+    const saveBtn = document.getElementById("saveSetup");
+    const originalText = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span> Validating...';
+    
+    try {
+        // Test credentials by fetching agents
+        const testBaseUrl = region && region.toLowerCase() === "eu" ? "https://eu.dust.tt" : "https://dust.tt";
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        
+        const response = await fetch(testBaseUrl + apiPath, {
+            method: "GET",
+            headers: {
+                "Authorization": "Bearer " + dustToken,
+                "Content-Type": "application/json"
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error("Invalid credentials. Please check your Workspace ID and API Key.");
+        }
+        
+        const data = await response.json();
+        
+        // Credentials are valid, save them
         saveToStorage("workspaceId", workspaceId);
         saveToStorage("dustToken", dustToken);
         saveToStorage("region", region);
@@ -93,8 +166,11 @@ function saveCredentials() {
         showMainForm();
         loadAssistants();
         initializeSelect2();
-    } else {
-        alert("Please enter both Workspace ID and API Key");
+    } catch (error) {
+        alert(error.message || "Failed to validate credentials. Please check your Workspace ID and API Key.");
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalText;
     }
 }
 
