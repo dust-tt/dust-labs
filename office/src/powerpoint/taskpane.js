@@ -312,7 +312,38 @@ async function handleSubmit(e) {
     return;
   }
 
-  document.getElementById("submitBtn").disabled = true;
+  // If processing entire presentation, count text blocks first
+  if (scope === "presentation") {
+    document.getElementById("submitBtn").disabled = true;
+    document.getElementById("status").innerHTML =
+      '<div class="spinner"></div> Counting text blocks...';
+    
+    try {
+      const textBlockCount = await countPresentationTextBlocks();
+      
+      if (textBlockCount === 0) {
+        document.getElementById("submitBtn").disabled = false;
+        document.getElementById("status").textContent = "❌ No text content found to process";
+        return;
+      }
+      
+      // Show confirmation dialog
+      const confirmed = await showConfirmationDialog(textBlockCount);
+      
+      if (!confirmed) {
+        document.getElementById("submitBtn").disabled = false;
+        document.getElementById("status").innerHTML = "";
+        return;
+      }
+    } catch (error) {
+      document.getElementById("submitBtn").disabled = false;
+      document.getElementById("status").textContent = "❌ Error: " + error.message;
+      return;
+    }
+  } else {
+    document.getElementById("submitBtn").disabled = true;
+  }
+
   document.getElementById("status").innerHTML =
     '<div class="spinner"></div> Extracting content...';
 
@@ -380,16 +411,48 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
     } else if (scope === "slide") {
-      // Get the current/selected slide
-      const selectedSlides = context.presentation.getSelectedSlides();
-      selectedSlides.load("items");
-      await context.sync();
-
+      // Get the currently active slide
       let targetSlides = [];
-      if (selectedSlides.items && selectedSlides.items.length > 0) {
-        targetSlides = selectedSlides.items;
-      } else {
-        // Fallback: get the first slide if no selection
+
+      try {
+        // Try to get selected slides first
+        const selectedSlides = context.presentation.getSelectedSlides();
+        selectedSlides.load("items");
+        await context.sync();
+
+        if (selectedSlides.items && selectedSlides.items.length > 0) {
+          targetSlides = selectedSlides.items;
+        }
+      } catch (e) {
+        // getSelectedSlides might not be available or might fail
+        console.log("Could not get selected slides, using active slide");
+      }
+
+      // If no selected slides, get the active slide
+      if (targetSlides.length === 0) {
+        try {
+          // Get the active slide through selected shapes
+          const selectedShapes = context.presentation.getSelectedShapes();
+          selectedShapes.load("items/id");
+          await context.sync();
+
+          if (selectedShapes.items && selectedShapes.items.length > 0) {
+            // Get the slide that contains the first selected shape
+            const shape = selectedShapes.items[0];
+            shape.load("parentSlide");
+            await context.sync();
+
+            if (shape.parentSlide) {
+              targetSlides = [shape.parentSlide];
+            }
+          }
+        } catch (e) {
+          console.log("Could not get active slide through shapes");
+        }
+      }
+
+      // Final fallback: use the first slide
+      if (targetSlides.length === 0) {
         const presentation = context.presentation;
         presentation.slides.load("items");
         await context.sync();
@@ -556,4 +619,74 @@ function updateProgressDisplay() {
   if (processingProgress.status === "processing") {
     statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
   }
+}
+
+// Count text blocks in presentation
+async function countPresentationTextBlocks() {
+  return await PowerPoint.run(async (context) => {
+    let textBlockCount = 0;
+    
+    // Get all slides in the presentation
+    const presentation = context.presentation;
+    presentation.slides.load("items");
+    await context.sync();
+    
+    // Count text blocks from all slides
+    for (let slide of presentation.slides.items) {
+      slide.shapes.load("items");
+      await context.sync();
+      
+      for (let shape of slide.shapes.items) {
+        if (shape.type === "GeometricShape" || shape.type === "TextBox") {
+          shape.textFrame.load("textRange");
+          await context.sync();
+          
+          if (shape.textFrame && shape.textFrame.textRange) {
+            const text = shape.textFrame.textRange.text;
+            if (text && text.trim()) {
+              textBlockCount++;
+            }
+          }
+        }
+      }
+    }
+    
+    return textBlockCount;
+  });
+}
+
+// Show confirmation dialog
+function showConfirmationDialog(textBlockCount) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("confirmationModal");
+    const message = document.getElementById("confirmationMessage");
+    const confirmBtn = document.getElementById("confirmProcessBtn");
+    const cancelBtn = document.getElementById("cancelProcessBtn");
+    
+    // Set message
+    const blockText = textBlockCount === 1 ? "text block" : "text blocks";
+    message.textContent = `This will process ${textBlockCount} ${blockText} across the entire presentation. Each text block will be sent to the selected agent for processing. Do you want to continue?`;
+    
+    // Show modal
+    modal.style.display = "flex";
+    
+    // Handle confirm
+    const handleConfirm = () => {
+      modal.style.display = "none";
+      confirmBtn.removeEventListener("click", handleConfirm);
+      cancelBtn.removeEventListener("click", handleCancel);
+      resolve(true);
+    };
+    
+    // Handle cancel
+    const handleCancel = () => {
+      modal.style.display = "none";
+      confirmBtn.removeEventListener("click", handleConfirm);
+      cancelBtn.removeEventListener("click", handleCancel);
+      resolve(false);
+    };
+    
+    confirmBtn.addEventListener("click", handleConfirm);
+    cancelBtn.addEventListener("click", handleCancel);
+  });
 }

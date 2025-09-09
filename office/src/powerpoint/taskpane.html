@@ -108,6 +108,18 @@
         <div class="version">v0.1</div>
     </div>
     
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmationModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3 class="modal-title">Confirm Processing</h3>
+            <p id="confirmationMessage" class="modal-message"></p>
+            <div class="modal-buttons">
+                <button id="confirmProcessBtn" class="btn btn-primary" style="margin-top: 0;">Continue</button>
+                <button id="cancelProcessBtn" class="btn btn-secondary" style="margin-top: 0;">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- JavaScript -->
     <script src="dust-api.js"></script>
     <script src="taskpane.js"></script>
