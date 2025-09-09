@@ -86,13 +86,13 @@ Shared resources (like dust-api.js) are automatically routed from both paths.
 
 ### Excel Add-in
 1. Open Excel (desktop or web)
-2. Go to Insert > My Add-ins > Upload My Add-in
+2. Go to Insert > Add-ins > Other Add-ins > My Add-ins > Upload My Add-in
 3. Upload `/excel/manifest.xml`
 4. The add-in will appear in the Home tab
 
 ### PowerPoint Add-in
 1. Open PowerPoint (desktop or web)
-2. Go to Insert > My Add-ins > Upload My Add-in
+2. Go to Insert > Add-ins > Advanced > Upload
 3. Upload `/powerpoint/manifest.xml`
 4. The add-in will appear in the Home tab
 
