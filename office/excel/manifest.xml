@@ -7,7 +7,7 @@
     xsi:type="TaskPaneApp">
     
     <!-- Basic Information -->
-    <Id>dust-excel-add-in</Id>
+    <Id>e7a1a8c3-9b2f-4d3e-8f6a-1c2d3e4f5a6b</Id>
     <Version>1.0.0.0</Version>
     <ProviderName>Dust</ProviderName>
     <DefaultLocale>en-US</DefaultLocale>

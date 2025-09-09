@@ -7,7 +7,7 @@
     xsi:type="TaskPaneApp">
     
     <!-- Basic Information -->
-    <Id>dust-powerpoint-add-in</Id>
+    <Id>f8b2b9d4-0c3f-5e4d-9f7b-2d3e4f5b6c7d</Id>
     <Version>1.0.0.0</Version>
     <ProviderName>Dust</ProviderName>
     <DefaultLocale>en-US</DefaultLocale>
@@ -23,7 +23,7 @@
     <AppDomains>
         <AppDomain>https://dust.tt</AppDomain>
         <AppDomain>https://eu.dust.tt</AppDomain>
-        <AppDomain>https://dust-office-addins.vercel.app</AppDomain>
+        <AppDomain>https://office-addins.dust.tt</AppDomain>
     </AppDomains>
     
     <!-- Host and Permissions -->
@@ -32,7 +32,7 @@
     </Hosts>
     
     <DefaultSettings>
-        <SourceLocation DefaultValue="https://dust-office-addins.vercel.app/powerpoint/taskpane.html"/>
+        <SourceLocation DefaultValue="https://office-addins.dust.tt/powerpoint/taskpane.html"/>
     </DefaultSettings>
     
     <Permissions>ReadWriteDocument</Permissions>
@@ -92,8 +92,8 @@
                 <bt:Image id="Icon.80x80" DefaultValue="https://dust.tt/static/favicon@3x.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="Commands.Url" DefaultValue="https://dust-office-addins.vercel.app/powerpoint/commands.html"/>
-                <bt:Url id="Taskpane.Url" DefaultValue="https://dust-office-addins.vercel.app/powerpoint/taskpane.html"/>
+                <bt:Url id="Commands.Url" DefaultValue="https://office-addins.dust.tt/powerpoint/commands.html"/>
+                <bt:Url id="Taskpane.Url" DefaultValue="https://office-addins.dust.tt/powerpoint/taskpane.html"/>
                 <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://dust.tt/"/>
             </bt:Urls>
             <bt:ShortStrings>
