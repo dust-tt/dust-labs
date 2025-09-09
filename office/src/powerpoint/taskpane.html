@@ -48,28 +48,30 @@
             </div>
             <div class="form-group">
                 <label class="form-label">Region (optional):</label>
-                <select id="regionSelect" class="form-input">
-                    <option value="">Default (US)</option>
-                    <option value="eu">Europe (EU)</option>
-                </select>
+                <input type="text" id="region" class="form-input" placeholder="Leave empty for US or enter 'eu' for EU">
             </div>
-            <button id="saveCredentials" class="run-button">Save Credentials</button>
+            <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
+            <div id="removeConfirmation" style="display: none; margin-top: 12px;">
+                <p class="confirm-message">Are you sure you want to remove your credentials?</p>
+                <div style="display: flex; gap: 8px;">
+                    <button id="confirmRemove" class="btn btn-danger" style="flex: 1;">Yes, Remove</button>
+                    <button id="cancelRemove" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                </div>
+            </div>
+            <button id="removeCredentialsBtn" class="btn btn-danger" style="display: none; margin-top: 12px;">Remove Credentials</button>
         </div>
         
-        <!-- Main Panel (hidden initially) -->
-        <div id="mainPanel" class="main-panel" style="display: none;">
-            <!-- User Profile -->
-            <div class="user-profile">
-                <span id="userWorkspace" class="user-workspace"></span>
-                <button id="changeUser" class="change-user-btn">Change</button>
-            </div>
-            
-            <!-- Agent Selection -->
+        <!-- Main Form (hidden by default) -->
+        <form id="myForm" style="display: none;">
             <div class="form-group">
-                <label class="form-label">Select Agent:</label>
-                <select id="agentSelect" class="agent-select">
-                    <option value="">Loading agents...</option>
-                </select>
+                <label class="form-label">Select agent</label>
+                <div class="search-container">
+                    <select id="assistant" name="assistant" required disabled>
+                        <option value=""></option>
+                    </select>
+                    <div class="search-icon">🔍</div>
+                </div>
+                <div id="loadError" class="error">Failed to load agents</div>
             </div>
             
             <!-- Scope Selection for PowerPoint -->
@@ -91,47 +93,23 @@
                 </div>
             </div>
             
-            <!-- Instructions Input -->
             <div class="form-group">
-                <label class="form-label">Instructions (optional):</label>
-                <textarea id="instructionsInput" class="instructions-input" 
-                          placeholder="Enter additional instructions for the agent..."></textarea>
+                <label class="form-label">Additional instructions (optional)</label>
+                <textarea id="instructions" name="instructions" placeholder="e.g., 'Summarize each slide in 2 sentences'"></textarea>
             </div>
             
-            <!-- Action Buttons -->
-            <div class="button-group">
-                <button id="runAgent" class="run-button">Run Agent</button>
-                <button id="cancelRun" class="cancel-button" style="display: none;">Cancel</button>
-            </div>
+            <div id="status"></div>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Run</button>
             
-            <!-- Progress Section -->
-            <div id="progressSection" class="progress-section" style="display: none;">
-                <div class="progress-header">
-                    <span class="progress-title">Processing...</span>
-                    <div class="progress-spinner"></div>
-                </div>
-                <div id="progressMessage" class="progress-message"></div>
-            </div>
-            
-            <!-- Results Section -->
-            <div id="resultsSection" class="results-section" style="display: none;">
-                <h3 class="results-title">Results</h3>
-                <div id="resultsContent" class="results-content"></div>
-                <div class="button-group">
-                    <button id="applyResults" class="run-button">Apply to Presentation</button>
-                    <button id="discardResults" class="cancel-button">Discard</button>
-                </div>
-            </div>
-            
-            <!-- Error Section -->
-            <div id="errorSection" class="error-section" style="display: none;">
-                <div id="errorMessage" class="error-message"></div>
-            </div>
-        </div>
+            <!-- Update Credentials Button (hidden by default) -->
+            <button id="updateCredentialsBtn" class="btn btn-secondary" style="display: none; margin-top: 16px; width: 100%;">Update Credentials</button>
+        </form>
+        
+        <div class="version">v0.1</div>
     </div>
     
-    <!-- Load JavaScript -->
-    <script src="dust-api.js"></script>
+    <!-- JavaScript -->
+    <script src="../shared/dust-api.js"></script>
     <script src="taskpane.js"></script>
 </body>
 </html>

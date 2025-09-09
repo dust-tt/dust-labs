@@ -99,11 +99,11 @@
             <bt:ShortStrings>
                 <bt:String id="GetStarted.Title" DefaultValue="Get started with Dust PowerPoint Add-in"/>
                 <bt:String id="DustCommands.Group.Label" DefaultValue="Dust"/>
-                <bt:String id="TaskpaneButton.Label" DefaultValue="Open Dust"/>
-                <bt:String id="TaskpaneButton.Title" DefaultValue="Dust AI Assistant"/>
+                <bt:String id="TaskpaneButton.Label" DefaultValue="Call an Agent"/>
+                <bt:String id="TaskpaneButton.Title" DefaultValue="Dust"/>
             </bt:ShortStrings>
             <bt:LongStrings>
-                <bt:String id="GetStarted.Description" DefaultValue="Your add-in loaded successfully. Go to the HOME tab and click the 'Open Dust' button to get started."/>
+                <bt:String id="GetStarted.Description" DefaultValue="Your add-in loaded successfully. Go to the HOME tab and click the 'Call an Agent' button to get started."/>
                 <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the Dust AI Assistant to use agents in your presentation"/>
             </bt:LongStrings>
         </Resources>

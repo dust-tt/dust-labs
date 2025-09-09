@@ -1,472 +1,530 @@
+/* global Office, PowerPoint */
+
+const DUST_VERSION = "0.1";
+let processingProgress = { current: 0, total: 0, status: "idle" };
+
+// Initialize Office
 Office.onReady((info) => {
     if (info.host === Office.HostType.PowerPoint) {
-        document.getElementById("saveCredentials").onclick = saveCredentials;
-        document.getElementById("changeUser").onclick = changeUser;
-        document.getElementById("runAgent").onclick = runAgent;
-        document.getElementById("applyResults").onclick = applyResults;
-        document.getElementById("discardResults").onclick = discardResults;
-        document.getElementById("cancelRun").onclick = cancelRun;
+        document.getElementById("myForm").addEventListener("submit", handleSubmit);
+        document.getElementById("saveSetup").onclick = saveCredentials;
+        document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
+        document.getElementById("removeCredentialsBtn").onclick = showRemoveConfirmation;
+        document.getElementById("confirmRemove").onclick = removeCredentials;
+        document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
         
-        checkCredentials();
+        // Initialize
+        checkCredentialsAndInitialize();
     }
 });
 
-let currentConversationId = null;
-let currentResults = null;
-let isRunning = false;
+// Initialize Select2
+function initializeSelect2() {
+    $("#assistant").select2({
+        placeholder: "Loading agents...",
+        allowClear: true,
+        width: "100%",
+        language: {
+            noResults: function() {
+                return "No agents found";
+            }
+        }
+    });
+}
 
-async function checkCredentials() {
-    const settings = Office.context.document.settings;
-    const workspaceId = settings.get("dustWorkspaceId");
-    const token = settings.get("dustApiKey");
-    const region = settings.get("dustRegion") || "";
+// Storage functions
+function saveToStorage(key, value) {
+    localStorage.setItem(`dust_powerpoint_${key}`, value);
+}
+
+function getFromStorage(key) {
+    return localStorage.getItem(`dust_powerpoint_${key}`);
+}
+
+// Check credentials and initialize the appropriate view
+function checkCredentialsAndInitialize() {
+    const workspaceId = getFromStorage("workspaceId");
+    const dustToken = getFromStorage("dustToken");
     
-    if (workspaceId && token) {
-        document.getElementById("credentialSetup").style.display = "none";
-        document.getElementById("mainPanel").style.display = "block";
-        document.getElementById("userWorkspace").textContent = workspaceId;
-        
-        await loadAgents(workspaceId, token, region);
+    if (workspaceId && dustToken) {
+        // Credentials exist, show the main form
+        showMainForm();
+        loadAssistants();
+        initializeSelect2();
     } else {
-        document.getElementById("credentialSetup").style.display = "block";
-        document.getElementById("mainPanel").style.display = "none";
+        // No credentials, show setup panel
+        showCredentialSetup();
     }
+}
+
+// Show credential setup panel
+function showCredentialSetup() {
+    document.getElementById("credentialSetup").style.display = "block";
+    document.getElementById("myForm").style.display = "none";
+    document.getElementById("updateCredentialsBtn").style.display = "none";
+    
+    // Hide error message initially
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
+    }
+    
+    // Load existing credentials if any
+    const existingWorkspace = getFromStorage("workspaceId");
+    const existingToken = getFromStorage("dustToken");
+    
+    document.getElementById("workspaceId").value = existingWorkspace || "";
+    document.getElementById("dustToken").value = existingToken || "";
+    document.getElementById("region").value = getFromStorage("region") || "";
+    
+    // Show/hide remove button based on whether credentials exist
+    const removeBtn = document.getElementById("removeCredentialsBtn");
+    if (removeBtn) {
+        removeBtn.style.display = (existingWorkspace || existingToken) ? "block" : "none";
+    }
+}
+
+// Show main form
+function showMainForm() {
+    document.getElementById("credentialSetup").style.display = "none";
+    document.getElementById("myForm").style.display = "block";
+    document.getElementById("updateCredentialsBtn").style.display = "block";
+}
+
+// Show remove confirmation
+function showRemoveConfirmation() {
+    document.getElementById("removeCredentialsBtn").style.display = "none";
+    document.getElementById("removeConfirmation").style.display = "block";
+}
+
+// Hide remove confirmation
+function hideRemoveConfirmation() {
+    document.getElementById("removeConfirmation").style.display = "none";
+    document.getElementById("removeCredentialsBtn").style.display = "block";
+}
+
+// Remove credentials
+function removeCredentials() {
+    // Clear all stored credentials
+    localStorage.removeItem("dust_powerpoint_workspaceId");
+    localStorage.removeItem("dust_powerpoint_dustToken");
+    localStorage.removeItem("dust_powerpoint_region");
+    localStorage.removeItem("dust_powerpoint_credentialsConfigured");
+    
+    // Clear input fields
+    document.getElementById("workspaceId").value = "";
+    document.getElementById("dustToken").value = "";
+    document.getElementById("region").value = "";
+    
+    // Hide remove button and confirmation
+    document.getElementById("removeCredentialsBtn").style.display = "none";
+    document.getElementById("removeConfirmation").style.display = "none";
+    
+    // Hide error message
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
+    }
+    
+    // Clear the assistant dropdown
+    const select = document.getElementById("assistant");
+    select.innerHTML = '<option value=""></option>';
+    select.disabled = true;
+    
+    // Reset Select2
+    $("#assistant").select2({
+        placeholder: "Loading agents...",
+        allowClear: true,
+        width: "100%"
+    });
+    
+    // Clear any error messages in the main form
+    const loadError = document.getElementById("loadError");
+    if (loadError) {
+        loadError.style.display = "none";
+    }
+    
+    // Show credential setup as if starting fresh
+    document.getElementById("credentialSetup").style.display = "block";
+    document.getElementById("myForm").style.display = "none";
+    document.getElementById("updateCredentialsBtn").style.display = "none";
 }
 
 async function saveCredentials() {
-    const workspaceId = document.getElementById("workspaceId").value.trim();
-    const token = document.getElementById("dustToken").value.trim();
-    const region = document.getElementById("regionSelect").value;
+    const workspaceId = document.getElementById("workspaceId").value;
+    const dustToken = document.getElementById("dustToken").value;
+    const region = document.getElementById("region").value;
     
-    if (!workspaceId || !token) {
-        showCredentialError("Please enter both Workspace ID and API Key");
+    // Hide any previous error
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
+    }
+    
+    if (!workspaceId || !dustToken) {
+        if (errorDiv) {
+            errorDiv.textContent = "Please enter both Workspace ID and API Key";
+            errorDiv.style.display = "block";
+        }
+        return;
+    }
+    
+    // Show loading state
+    const saveBtn = document.getElementById("saveSetup");
+    const originalText = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span> Validating...';
+    
+    try {
+        // Temporarily save credentials to test them
+        saveToStorage("workspaceId", workspaceId);
+        saveToStorage("dustToken", dustToken);
+        saveToStorage("region", region);
+        
+        // Test credentials by fetching agents using the proxy
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        const data = await callDustAPI(apiPath);
+        
+        // Credentials are valid, save the configured flag
+        saveToStorage("credentialsConfigured", "true");
+        
+        // Hide error if it was showing
+        if (errorDiv) {
+            errorDiv.style.display = "none";
+        }
+        
+        // Switch to main form
+        showMainForm();
+        loadAssistants();
+        initializeSelect2();
+    } catch (error) {
+        // Remove invalid credentials
+        localStorage.removeItem("dust_powerpoint_workspaceId");
+        localStorage.removeItem("dust_powerpoint_dustToken");
+        localStorage.removeItem("dust_powerpoint_region");
+        localStorage.removeItem("dust_powerpoint_credentialsConfigured");
+        
+        // Show error message
+        if (errorDiv) {
+            errorDiv.textContent = "❌ Invalid credentials. Please check your Workspace ID and API Key.";
+            errorDiv.style.display = "block";
+        }
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalText;
+    }
+}
+
+
+// Dust API functions
+function getDustBaseUrl() {
+    const region = getFromStorage("region");
+    if (region && region.toLowerCase() === "eu") {
+        return "https://eu.dust.tt";
+    }
+    return "https://dust.tt";
+}
+
+async function loadAssistants() {
+    const token = getFromStorage("dustToken");
+    const workspaceId = getFromStorage("workspaceId");
+    
+    if (!token || !workspaceId) {
+        const errorDiv = document.getElementById("loadError");
+        errorDiv.textContent = "❌ Please configure Dust credentials first";
+        errorDiv.style.display = "block";
+        $("#assistant").select2({
+            placeholder: "Failed to load agents",
+            allowClear: true,
+            width: "100%"
+        });
         return;
     }
     
     try {
-        const settings = Office.context.document.settings;
-        settings.set("dustWorkspaceId", workspaceId);
-        settings.set("dustApiKey", token);
-        settings.set("dustRegion", region);
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        const data = await callDustAPI(apiPath);
+        const assistants = data.agentConfigurations;
         
-        await settings.saveAsync();
+        const sortedAssistants = assistants.sort((a, b) => a.name.localeCompare(b.name));
         
-        document.getElementById("credentialSetup").style.display = "none";
-        document.getElementById("mainPanel").style.display = "block";
-        document.getElementById("userWorkspace").textContent = workspaceId;
+        const select = document.getElementById("assistant");
+        select.innerHTML = "";
         
-        await loadAgents(workspaceId, token, region);
-    } catch (error) {
-        showCredentialError("Failed to save credentials: " + error.message);
-    }
-}
-
-function changeUser() {
-    const settings = Office.context.document.settings;
-    settings.remove("dustWorkspaceId");
-    settings.remove("dustApiKey");
-    settings.remove("dustRegion");
-    
-    settings.saveAsync(() => {
-        document.getElementById("workspaceId").value = "";
-        document.getElementById("dustToken").value = "";
-        document.getElementById("regionSelect").value = "";
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        select.appendChild(emptyOption);
         
-        document.getElementById("credentialSetup").style.display = "block";
-        document.getElementById("mainPanel").style.display = "none";
-        document.getElementById("agentSelect").innerHTML = '<option value="">Loading agents...</option>';
-    });
-}
-
-async function loadAgents(workspaceId, token, region) {
-    const agentSelect = document.getElementById("agentSelect");
-    
-    try {
-        const baseUrl = region === "eu" ? "https://eu.dust.tt" : "https://dust.tt";
-        const response = await fetch(`${baseUrl}/api/v1/w/${workspaceId}/assistant/agent_configurations`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
+        sortedAssistants.forEach(a => {
+            const option = document.createElement("option");
+            option.value = a.sId;
+            option.textContent = a.name;
+            select.appendChild(option);
+        });
+        
+        select.disabled = false;
+        document.getElementById("loadError").style.display = "none";
+        
+        $("#assistant").select2({
+            placeholder: "Select an agent",
+            allowClear: true,
+            width: "100%",
+            language: {
+                noResults: function() {
+                    return "No agents found";
+                }
             }
         });
         
-        if (!response.ok) {
-            throw new Error(`Failed to load agents: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        const agents = data.agentConfigurations || [];
-        
-        $(agentSelect).empty();
-        
-        if (agents.length === 0) {
-            $(agentSelect).append('<option value="">No agents available</option>');
-        } else {
-            $(agentSelect).append('<option value="">Select an agent...</option>');
-            agents.forEach(agent => {
-                $(agentSelect).append(`<option value="${agent.sId}">${agent.name}</option>`);
+        if (assistants.length === 0) {
+            $("#assistant").select2({
+                placeholder: "No agents available",
+                allowClear: true,
+                width: "100%"
             });
         }
-        
-        $(agentSelect).select2({
-            placeholder: "Select an agent",
-            allowClear: false,
-            minimumResultsForSearch: 5
-        });
-        
     } catch (error) {
-        showError("Failed to load agents: " + error.message);
-        $(agentSelect).html('<option value="">Failed to load agents</option>');
+        const errorDiv = document.getElementById("loadError");
+        errorDiv.textContent = "❌ " + error.message;
+        errorDiv.style.display = "block";
+        $("#assistant").select2({
+            placeholder: "Failed to load agents",
+            allowClear: true,
+            width: "100%"
+        });
     }
 }
 
-async function runAgent() {
-    const agentId = document.getElementById("agentSelect").value;
-    if (!agentId) {
-        showError("Please select an agent");
+// Process functions
+async function handleSubmit(e) {
+    e.preventDefault();
+    
+    const assistantSelect = document.getElementById("assistant");
+    const scope = document.querySelector('input[name="scope"]:checked').value;
+    
+    if (!assistantSelect.value) {
+        alert("Please select an agent");
         return;
     }
     
-    const scope = document.querySelector('input[name="scope"]:checked').value;
-    const instructions = document.getElementById("instructionsInput").value.trim();
+    document.getElementById("submitBtn").disabled = true;
+    document.getElementById("status").innerHTML = '<div class="spinner"></div> Extracting content...';
     
     try {
-        isRunning = true;
-        showProgress("Extracting content from presentation...");
-        document.getElementById("runAgent").style.display = "none";
-        document.getElementById("cancelRun").style.display = "inline-block";
+        await processWithAssistant(
+            assistantSelect.value,
+            document.getElementById("instructions").value,
+            scope
+        );
         
-        const content = await extractContent(scope);
-        
-        if (!content || content.trim() === "") {
-            throw new Error("No content found to process");
-        }
-        
-        showProgress("Sending to Dust agent...");
-        
-        const settings = Office.context.document.settings;
-        const workspaceId = settings.get("dustWorkspaceId");
-        const token = settings.get("dustApiKey");
-        const region = settings.get("dustRegion") || "";
-        
-        const message = instructions 
-            ? `${instructions}\n\nPresentation content:\n${content}` 
-            : `Process this presentation content:\n${content}`;
-        
-        const result = await callDustAgent(workspaceId, token, region, agentId, message);
-        
-        if (!isRunning) {
-            showProgress("");
-            return;
-        }
-        
-        currentResults = result;
-        displayResults(result);
-        
+        document.getElementById("submitBtn").disabled = false;
+        document.getElementById("status").innerHTML = '✅ Processing complete';
+        setTimeout(() => {
+            document.getElementById("status").innerHTML = '';
+        }, 3000);
     } catch (error) {
-        showError("Error: " + error.message);
-    } finally {
-        isRunning = false;
-        document.getElementById("runAgent").style.display = "inline-block";
-        document.getElementById("cancelRun").style.display = "none";
-        hideProgress();
+        document.getElementById("submitBtn").disabled = false;
+        document.getElementById("status").textContent = '❌ Error: ' + error.message;
     }
 }
 
-async function extractContent(scope) {
-    return new Promise((resolve, reject) => {
-        PowerPoint.run(async (context) => {
-            let content = "";
+async function processWithAssistant(assistantId, instructions, scope) {
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY = 1000;
+    
+    const token = getFromStorage("dustToken");
+    const workspaceId = getFromStorage("workspaceId");
+    
+    if (!token || !workspaceId) {
+        throw new Error("Please configure your Dust credentials first");
+    }
+    
+    await PowerPoint.run(async (context) => {
+        // Extract content based on scope
+        let content = "";
+        let targetSlides = [];
+        
+        if (scope === "presentation") {
+            const presentation = context.presentation;
+            presentation.slides.load("items");
+            await context.sync();
+            targetSlides = presentation.slides.items;
+        } else if (scope === "slide") {
+            const selectedSlides = context.presentation.getSelectedSlides();
+            selectedSlides.load("items");
+            await context.sync();
+            targetSlides = selectedSlides.items;
+        } else if (scope === "selection") {
+            // Handle selection differently - just extract and process
+            const selectedShapes = context.presentation.getSelectedShapes();
+            selectedShapes.load("items");
+            await context.sync();
             
-            try {
-                if (scope === "presentation") {
-                    const presentation = context.presentation;
-                    presentation.slides.load("items");
+            if (selectedShapes.items.length > 0) {
+                content = "--- Selected Content ---\n";
+                for (let shape of selectedShapes.items) {
+                    shape.textFrame.load("textRange");
                     await context.sync();
                     
-                    for (let i = 0; i < presentation.slides.items.length; i++) {
-                        const slide = presentation.slides.items[i];
-                        slide.shapes.load("items");
-                        await context.sync();
-                        
-                        content += `\n--- Slide ${i + 1} ---\n`;
-                        
-                        for (let shape of slide.shapes.items) {
-                            if (shape.type === "GeometricShape" || shape.type === "TextBox") {
-                                shape.textFrame.load("textRange");
-                                await context.sync();
-                                
-                                if (shape.textFrame && shape.textFrame.textRange) {
-                                    const text = shape.textFrame.textRange.text;
-                                    if (text && text.trim()) {
-                                        content += text + "\n";
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                } else if (scope === "slide") {
-                    const selectedSlides = context.presentation.getSelectedSlides();
-                    selectedSlides.load("items");
-                    await context.sync();
-                    
-                    if (selectedSlides.items.length > 0) {
-                        const slide = selectedSlides.items[0];
-                        slide.shapes.load("items");
-                        await context.sync();
-                        
-                        content = "--- Current Slide ---\n";
-                        
-                        for (let shape of slide.shapes.items) {
-                            if (shape.type === "GeometricShape" || shape.type === "TextBox") {
-                                shape.textFrame.load("textRange");
-                                await context.sync();
-                                
-                                if (shape.textFrame && shape.textFrame.textRange) {
-                                    const text = shape.textFrame.textRange.text;
-                                    if (text && text.trim()) {
-                                        content += text + "\n";
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                } else if (scope === "selection") {
-                    const selectedShapes = context.presentation.getSelectedShapes();
-                    selectedShapes.load("items");
-                    await context.sync();
-                    
-                    if (selectedShapes.items.length > 0) {
-                        content = "--- Selected Content ---\n";
-                        
-                        for (let shape of selectedShapes.items) {
-                            shape.textFrame.load("textRange");
-                            await context.sync();
-                            
-                            if (shape.textFrame && shape.textFrame.textRange) {
-                                const text = shape.textFrame.textRange.text;
-                                if (text && text.trim()) {
-                                    content += text + "\n";
-                                }
-                            }
-                        }
-                    } else {
-                        const selectedTextRange = context.presentation.getSelectedTextRange();
-                        selectedTextRange.load("text");
-                        await context.sync();
-                        
-                        if (selectedTextRange.text) {
-                            content = "--- Selected Text ---\n" + selectedTextRange.text;
+                    if (shape.textFrame && shape.textFrame.textRange) {
+                        const text = shape.textFrame.textRange.text;
+                        if (text && text.trim()) {
+                            content += text + "\n";
                         }
                     }
                 }
-                
-                resolve(content);
-            } catch (error) {
-                reject(error);
-            }
-        });
-    });
-}
-
-async function callDustAgent(workspaceId, token, region, agentId, message) {
-    const baseUrl = region === "eu" ? "https://eu.dust.tt" : "https://dust.tt";
-    
-    const response = await fetch(`${baseUrl}/api/v1/w/${workspaceId}/assistant/agent_configurations/${agentId}/conversations`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            message: {
-                content: message,
-                mentions: [],
-                context: {
-                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    profilePictureUrl: null
-                }
-            },
-            title: null,
-            visibility: "unlisted"
-        })
-    });
-    
-    if (!response.ok) {
-        throw new Error(`Failed to create conversation: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    currentConversationId = data.conversation.sId;
-    
-    showProgress("Processing with agent...");
-    
-    let attempts = 0;
-    const maxAttempts = 60;
-    
-    while (attempts < maxAttempts && isRunning) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const convResponse = await fetch(`${baseUrl}/api/v1/w/${workspaceId}/assistant/conversations/${currentConversationId}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!convResponse.ok) {
-            throw new Error(`Failed to get conversation: ${convResponse.statusText}`);
-        }
-        
-        const convData = await convResponse.json();
-        const messages = convData.conversation.content;
-        
-        if (messages && messages.length > 1) {
-            const lastMessage = messages[messages.length - 1];
-            if (lastMessage.type === "agent_message" && lastMessage.status === "succeeded") {
-                return lastMessage.content;
-            }
-        }
-        
-        attempts++;
-    }
-    
-    throw new Error("Agent did not respond in time");
-}
-
-async function applyResults() {
-    if (!currentResults) {
-        showError("No results to apply");
-        return;
-    }
-    
-    const scope = document.querySelector('input[name="scope"]:checked').value;
-    
-    try {
-        await PowerPoint.run(async (context) => {
-            if (scope === "selection") {
-                const selectedShapes = context.presentation.getSelectedShapes();
-                selectedShapes.load("items");
+            } else {
+                const selectedTextRange = context.presentation.getSelectedTextRange();
+                selectedTextRange.load("text");
                 await context.sync();
                 
+                if (selectedTextRange.text) {
+                    content = "--- Selected Text ---\n" + selectedTextRange.text;
+                }
+            }
+            
+            // Process the selection content
+            if (!content || content.trim() === "") {
+                throw new Error("No content found in selection");
+            }
+            
+            const inputContent = (instructions || "") + "\n\nContent:\n" + content;
+            
+            // Call Dust API
+            const payload = {
+                message: {
+                    content: inputContent,
+                    mentions: [{ configurationId: assistantId }],
+                    context: {
+                        username: "powerpoint",
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        fullName: "PowerPoint User",
+                        email: "powerpoint@dust.tt",
+                        profilePictureUrl: "",
+                        origin: "powerpoint"
+                    }
+                },
+                blocking: true,
+                title: "PowerPoint Conversation",
+                visibility: "unlisted",
+                skipToolsValidation: true
+            };
+            
+            document.getElementById("status").innerHTML = '<div class="spinner"></div> Processing with agent...';
+            
+            const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+            const result = await callDustAPI(apiPath, {
+                method: "POST",
+                body: payload,
+                headers: {
+                    "Authorization": "Bearer " + token
+                }
+            });
+            
+            const messages = result.conversation.content;
+            const lastAgentMessage = messages.flat().reverse().find(msg => msg.type === "agent_message");
+            
+            if (lastAgentMessage && lastAgentMessage.content) {
+                // For selection, we'll replace the selected content
                 if (selectedShapes.items.length > 0) {
                     const shape = selectedShapes.items[0];
-                    shape.textFrame.textRange.text = currentResults;
-                    await context.sync();
+                    shape.textFrame.textRange.text = lastAgentMessage.content;
                 } else {
-                    const selectedTextRange = context.presentation.getSelectedTextRange();
-                    selectedTextRange.text = currentResults;
-                    await context.sync();
+                    selectedTextRange.text = lastAgentMessage.content;
                 }
-                
-            } else if (scope === "slide") {
-                const selectedSlides = context.presentation.getSelectedSlides();
-                selectedSlides.load("items");
                 await context.sync();
-                
-                if (selectedSlides.items.length > 0) {
-                    const slide = selectedSlides.items[0];
-                    
-                    slide.shapes.load("items");
-                    await context.sync();
-                    
-                    for (let shape of slide.shapes.items) {
-                        shape.delete();
-                    }
-                    
-                    const textBox = slide.shapes.addTextBox(currentResults, {
-                        left: 50,
-                        top: 50,
-                        height: 400,
-                        width: 600
-                    });
-                    
-                    await context.sync();
-                }
-                
-            } else if (scope === "presentation") {
-                showError("Cannot automatically apply results to entire presentation. Please apply to specific slides.");
-                return;
             }
             
-            currentResults = null;
-            document.getElementById("resultsSection").style.display = "none";
-            showSuccess("Results applied successfully!");
+            return; // Exit early for selection processing
+        }
+        
+        // Process slides for presentation and slide scopes
+        if (targetSlides.length > 0) {
+            for (let i = 0; i < targetSlides.length; i++) {
+                const slide = targetSlides[i];
+                slide.shapes.load("items");
+                await context.sync();
+                
+                content += `\n--- Slide ${i + 1} ---\n`;
+                
+                for (let shape of slide.shapes.items) {
+                    if (shape.type === "GeometricShape" || shape.type === "TextBox") {
+                        shape.textFrame.load("textRange");
+                        await context.sync();
+                        
+                        if (shape.textFrame && shape.textFrame.textRange) {
+                            const text = shape.textFrame.textRange.text;
+                            if (text && text.trim()) {
+                                content += text + "\n";
+                            }
+                        }
+                    }
+                }
+            }
             
-        });
-    } catch (error) {
-        showError("Failed to apply results: " + error.message);
+            if (!content || content.trim() === "") {
+                throw new Error("No content found in slides");
+            }
+            
+            const inputContent = (instructions || "") + "\n\nPresentation content:\n" + content;
+            
+            // Call Dust API
+            const payload = {
+                message: {
+                    content: inputContent,
+                    mentions: [{ configurationId: assistantId }],
+                    context: {
+                        username: "powerpoint",
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        fullName: "PowerPoint User",
+                        email: "powerpoint@dust.tt",
+                        profilePictureUrl: "",
+                        origin: "powerpoint"
+                    }
+                },
+                blocking: true,
+                title: "PowerPoint Conversation",
+                visibility: "unlisted",
+                skipToolsValidation: true
+            };
+            
+            document.getElementById("status").innerHTML = '<div class="spinner"></div> Processing with agent...';
+            
+            const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+            const result = await callDustAPI(apiPath, {
+                method: "POST",
+                body: payload,
+                headers: {
+                    "Authorization": "Bearer " + token
+                }
+            });
+            
+            const messages = result.conversation.content;
+            const lastAgentMessage = messages.flat().reverse().find(msg => msg.type === "agent_message");
+            
+            if (lastAgentMessage && lastAgentMessage.content) {
+                // For now, add the result as a new slide at the end
+                const newSlide = context.presentation.slides.add();
+                newSlide.load("shapes");
+                await context.sync();
+                
+                // Add a text box with the result
+                const textBox = newSlide.shapes.addTextBox(lastAgentMessage.content, {
+                    left: 50,
+                    top: 50,
+                    height: 400,
+                    width: 600
+                });
+                
+                await context.sync();
+            }
+        }
+    });
+}
+
+function updateProgressDisplay() {
+    const statusDiv = document.getElementById("status");
+    if (processingProgress.status === "processing") {
+        statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
     }
-}
-
-function displayResults(content) {
-    document.getElementById("resultsContent").innerHTML = `<pre>${escapeHtml(content)}</pre>`;
-    document.getElementById("resultsSection").style.display = "block";
-    hideProgress();
-}
-
-function discardResults() {
-    currentResults = null;
-    document.getElementById("resultsSection").style.display = "none";
-    document.getElementById("resultsContent").innerHTML = "";
-}
-
-function cancelRun() {
-    isRunning = false;
-    currentConversationId = null;
-    hideProgress();
-    document.getElementById("runAgent").style.display = "inline-block";
-    document.getElementById("cancelRun").style.display = "none";
-}
-
-function showProgress(message) {
-    document.getElementById("progressSection").style.display = "block";
-    document.getElementById("progressMessage").textContent = message;
-    document.getElementById("errorSection").style.display = "none";
-}
-
-function hideProgress() {
-    document.getElementById("progressSection").style.display = "none";
-    document.getElementById("progressMessage").textContent = "";
-}
-
-function showError(message) {
-    document.getElementById("errorSection").style.display = "block";
-    document.getElementById("errorMessage").textContent = message;
-    setTimeout(() => {
-        document.getElementById("errorSection").style.display = "none";
-    }, 5000);
-}
-
-function showSuccess(message) {
-    document.getElementById("errorSection").style.display = "block";
-    document.getElementById("errorMessage").textContent = message;
-    document.getElementById("errorMessage").style.backgroundColor = "#d4edda";
-    document.getElementById("errorMessage").style.color = "#155724";
-    setTimeout(() => {
-        document.getElementById("errorSection").style.display = "none";
-        document.getElementById("errorMessage").style.backgroundColor = "";
-        document.getElementById("errorMessage").style.color = "";
-    }, 3000);
-}
-
-function showCredentialError(message) {
-    document.getElementById("credentialError").textContent = message;
-    document.getElementById("credentialError").style.display = "block";
-    setTimeout(() => {
-        document.getElementById("credentialError").style.display = "none";
-    }, 5000);
-}
-
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
 }

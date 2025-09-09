@@ -1,13 +1,32 @@
 // Dust API wrapper that uses the Vercel proxy to avoid CORS issues
 
-// Helper function to get from storage (compatible with both Excel and PowerPoint)
-function getDustStorageValue(key) {
-    // Try Excel storage first
-    let value = localStorage.getItem(`dust_excel_${key}`);
-    if (value) return value;
+// Detect which Office app is running
+function getOfficeApp() {
+    // Check if we're in an Office context
+    if (typeof Office !== 'undefined' && Office.context && Office.context.host) {
+        if (Office.context.host === Office.HostType.Excel) {
+            return 'excel';
+        } else if (Office.context.host === Office.HostType.PowerPoint) {
+            return 'powerpoint';
+        }
+    }
     
-    // Fall back to PowerPoint storage
-    return localStorage.getItem(`dust_powerpoint_${key}`);
+    // Fallback: check which storage keys exist
+    if (localStorage.getItem('dust_excel_workspaceId')) {
+        return 'excel';
+    } else if (localStorage.getItem('dust_powerpoint_workspaceId')) {
+        return 'powerpoint';
+    }
+    
+    // Default to excel if unable to determine
+    return 'excel';
+}
+
+// Helper function to get from storage based on current Office app
+function getDustStorageValue(key) {
+    const app = getOfficeApp();
+    const storageKey = `dust_${app}_${key}`;
+    return localStorage.getItem(storageKey);
 }
 
 // Get the proxy URL
@@ -56,3 +75,4 @@ async function callDustAPI(path, options = {}) {
 
 // Export for use in taskpane.js
 window.callDustAPI = callDustAPI;
+window.getOfficeApp = getOfficeApp;
