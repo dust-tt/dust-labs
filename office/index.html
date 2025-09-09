@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Office Add-ins - Installation Guide</title>
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
       * {
         margin: 0;
@@ -13,8 +16,8 @@
       }
 
       body {
-        font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
+        font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
         line-height: 1.6;
         color: #374151;
         background-color: #f8f9fa;
@@ -210,7 +213,7 @@
         background: #f3f4f6;
         padding: 2px 6px;
         border-radius: 4px;
-        font-family: 'Geist Mono', 'Courier New', monospace;
+        font-family: "Geist Mono", "Courier New", monospace;
         font-size: 13px;
         color: #374151;
       }
@@ -220,18 +223,42 @@
     <div class="container">
       <header>
         <div class="logo">
-          <svg width="96" height="24" viewBox="0 0 96 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M84 0H72V24H84V0Z" fill="#FE9C1A"/>
-            <path d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z" fill="#E2F78C"/>
-            <path d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z" fill="#FFC3DF"/>
-            <path d="M12 0H0V24H12V0Z" fill="#418B5C"/>
-            <path d="M48 0H24V12H48V0Z" fill="#E14322"/>
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z" fill="#3B82F6"/>
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z" fill="#9FDBFF"/>
+          <svg
+            width="96"
+            height="24"
+            viewBox="0 0 96 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M84 0H72V24H84V0Z" fill="#FE9C1A" />
+            <path
+              d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z"
+              fill="#E2F78C"
+            />
+            <path
+              d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z"
+              fill="#FFC3DF"
+            />
+            <path d="M12 0H0V24H12V0Z" fill="#418B5C" />
+            <path d="M48 0H24V12H48V0Z" fill="#E14322" />
+            <path
+              fill-rule="evenodd"
+              clip-rule="evenodd"
+              d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z"
+              fill="#3B82F6"
+            />
+            <path
+              fill-rule="evenodd"
+              clip-rule="evenodd"
+              d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z"
+              fill="#9FDBFF"
+            />
           </svg>
         </div>
         <h1>Office Add-ins</h1>
-        <p class="subtitle">Install AI-powered add-ins for Excel and PowerPoint</p>
+        <p class="subtitle">
+          Install AI-powered add-ins for Excel and PowerPoint
+        </p>
       </header>
 
       <div class="content">
@@ -242,7 +269,8 @@
               <h2>Excel Add-in</h2>
             </div>
             <p class="addin-description">
-              Use AI agents in your spreadsheets to analyze data, generate insights, and automate tasks.
+              Use AI agents in your spreadsheets to analyze data, generate
+              insights, and automate tasks.
             </p>
             <a
               href="excel/manifest.xml"
@@ -259,7 +287,8 @@
               <h2>PowerPoint Add-in</h2>
             </div>
             <p class="addin-description">
-              Enhance your presentations with AI-powered content generation and formatting.
+              Enhance your presentations with AI-powered content generation and
+              formatting.
             </p>
             <a
               href="powerpoint/manifest.xml"
@@ -317,17 +346,10 @@
           </ol>
 
           <div class="note">
-            <strong>Note:</strong> These add-ins require Office 365 or Office 2016 or later. For development and testing, ensure your local server is running before using the add-ins.
+            <strong>Note:</strong> These add-ins require Office 365 or Office
+            2016 or later. For development and testing, ensure your local server
+            is running before using the add-ins.
           </div>
-          
-          <h4>Alternative: Sideload for Development</h4>
-          <ol class="steps">
-            <li>For development purposes, you can also sideload the add-in directly</li>
-            <li>Place the manifest file in a network share or local folder</li>
-            <li>Add the folder path to the Trusted Add-in Catalogs in Office</li>
-            <li>Go to <code>File</code> → <code>Options</code> → <code>Trust Center</code> → <code>Trust Center Settings</code> → <code>Trusted Add-in Catalogs</code></li>
-            <li>Add the folder URL/path and check "Show in Menu"</li>
-          </ol>
         </div>
       </div>
     </div>
