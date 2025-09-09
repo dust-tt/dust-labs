@@ -1,253 +1,335 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Office Add-ins - Installation Guide</title>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
-        
-        header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
-        }
-        
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
-        
-        .content {
-            padding: 40px;
-        }
-        
-        .addins-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 30px;
-            margin-bottom: 40px;
-        }
-        
-        .addin-card {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 25px;
-            transition: all 0.3s ease;
-        }
-        
-        .addin-card:hover {
-            border-color: #667eea;
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.1);
-        }
-        
-        .addin-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .addin-icon {
-            width: 48px;
-            height: 48px;
-            margin-right: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            font-size: 24px;
-        }
-        
-        .excel-icon {
-            background: #107c41;
-            color: white;
-        }
-        
-        .powerpoint-icon {
-            background: #d24726;
-            color: white;
-        }
-        
-        h2 {
-            color: #333;
-            font-size: 1.5em;
-        }
-        
-        .download-btn {
-            display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: transform 0.2s ease;
-            margin-top: 15px;
-        }
-        
-        .download-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        .instructions {
-            background: #f5f5f5;
-            border-radius: 8px;
-            padding: 30px;
-            margin-top: 30px;
-        }
-        
-        .instructions h3 {
-            color: #667eea;
-            margin-bottom: 20px;
-            font-size: 1.3em;
-        }
-        
-        .steps {
-            list-style: none;
-            counter-reset: step-counter;
-        }
-        
-        .steps li {
-            counter-increment: step-counter;
-            margin-bottom: 20px;
-            padding-left: 40px;
-            position: relative;
-        }
-        
-        .steps li::before {
-            content: counter(step-counter);
-            position: absolute;
-            left: 0;
-            top: 0;
-            background: #667eea;
-            color: white;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 14px;
-        }
-        
-        .note {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin-top: 20px;
-            border-radius: 4px;
-        }
-        
-        .note strong {
-            color: #856404;
-        }
-        
-        code {
-            background: #f0f0f0;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.6;
+        color: #374151;
+        background-color: #f8f9fa;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        min-height: 100vh;
+      }
+
+      header {
+        background: white;
+        padding: 48px 40px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .logo {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 32px;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 600;
+        color: #1f2937;
+        text-align: center;
+        margin-bottom: 8px;
+      }
+
+      .subtitle {
+        font-size: 16px;
+        color: #6b7280;
+        text-align: center;
+      }
+
+      .content {
+        padding: 48px 40px;
+      }
+
+      .addins-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 24px;
+        margin-bottom: 48px;
+      }
+
+      .addin-card {
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 32px;
+        transition: all 0.2s ease;
+      }
+
+      .addin-card:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+      }
+
+      .addin-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .addin-icon {
+        width: 48px;
+        height: 48px;
+        margin-right: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 24px;
+      }
+
+      .excel-icon {
+        background: #107c41;
+        color: white;
+      }
+
+      .powerpoint-icon {
+        background: #d24726;
+        color: white;
+      }
+
+      h2 {
+        color: #1f2937;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .addin-description {
+        color: #6b7280;
+        font-size: 14px;
+        margin-bottom: 20px;
+        line-height: 1.5;
+      }
+
+      .download-btn {
+        display: inline-block;
+        background-color: #3b82f6;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
+        transition: all 0.2s ease;
+        width: 100%;
+        text-align: center;
+      }
+
+      .download-btn:hover {
+        background-color: #2563eb;
+      }
+
+      .instructions {
+        background: #f9fafb;
+        border-radius: 12px;
+        padding: 32px;
+        border: 1px solid #e5e7eb;
+      }
+
+      .instructions h3 {
+        color: #1f2937;
+        margin-bottom: 24px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      h4 {
+        color: #374151;
+        font-size: 16px;
+        font-weight: 500;
+        margin-top: 32px;
+        margin-bottom: 16px;
+      }
+
+      .steps {
+        list-style: none;
+        counter-reset: step-counter;
+      }
+
+      .steps li {
+        counter-increment: step-counter;
+        margin-bottom: 16px;
+        padding-left: 40px;
+        position: relative;
+        color: #374151;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .steps li::before {
+        content: counter(step-counter);
+        position: absolute;
+        left: 0;
+        top: 0;
+        background: #3b82f6;
+        color: white;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 500;
+        font-size: 12px;
+      }
+
+      .note {
+        background: #fef3c7;
+        border: 1px solid #fde68a;
+        padding: 16px;
+        margin-top: 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #92400e;
+      }
+
+      .note strong {
+        color: #78350f;
+        font-weight: 600;
+      }
+
+      code {
+        background: #f3f4f6;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Geist Mono', 'Courier New', monospace;
+        font-size: 13px;
+        color: #374151;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <header>
-            <h1>Office Add-ins</h1>
-            <p class="subtitle">Excel and PowerPoint Add-in Installation Guide</p>
-        </header>
-        
-        <div class="content">
-            <div class="addins-grid">
-                <div class="addin-card">
-                    <div class="addin-header">
-                        <div class="addin-icon excel-icon">📊</div>
-                        <h2>Excel Add-in</h2>
-                    </div>
-                    <p>Enhance your Excel experience with our custom add-in functionality.</p>
-                    <a href="excel/manifest.xml" download="excel-manifest.xml" class="download-btn">
-                        Download Excel Manifest
-                    </a>
-                </div>
-                
-                <div class="addin-card">
-                    <div class="addin-header">
-                        <div class="addin-icon powerpoint-icon">📽️</div>
-                        <h2>PowerPoint Add-in</h2>
-                    </div>
-                    <p>Add powerful features to your PowerPoint presentations.</p>
-                    <a href="powerpoint/manifest.xml" download="powerpoint-manifest.xml" class="download-btn">
-                        Download PowerPoint Manifest
-                    </a>
-                </div>
-            </div>
-            
-            <div class="instructions">
-                <h3>📋 Installation Instructions</h3>
-                
-                <h4 style="margin-top: 25px; margin-bottom: 15px;">For Excel Add-in:</h4>
-                <ol class="steps">
-                    <li>Download the Excel manifest file using the button above</li>
-                    <li>Open Excel and go to <code>Insert</code> → <code>Get Add-ins</code> (or <code>Insert</code> → <code>My Add-ins</code>)</li>
-                    <li>Click on <code>Manage My Add-ins</code> → <code>Upload My Add-in</code></li>
-                    <li>Browse and select the downloaded <code>excel-manifest.xml</code> file</li>
-                    <li>Click <code>Upload</code> to install the add-in</li>
-                    <li>The add-in will appear in the <code>Home</code> tab ribbon</li>
-                </ol>
-                
-                <h4 style="margin-top: 25px; margin-bottom: 15px;">For PowerPoint Add-in:</h4>
-                <ol class="steps">
-                    <li>Download the PowerPoint manifest file using the button above</li>
-                    <li>Open PowerPoint and go to <code>Insert</code> → <code>Get Add-ins</code> (or <code>Insert</code> → <code>My Add-ins</code>)</li>
-                    <li>Click on <code>Manage My Add-ins</code> → <code>Upload My Add-in</code></li>
-                    <li>Browse and select the downloaded <code>powerpoint-manifest.xml</code> file</li>
-                    <li>Click <code>Upload</code> to install the add-in</li>
-                    <li>The add-in will appear in the <code>Home</code> tab ribbon</li>
-                </ol>
-                
-                <div class="note">
-                    <strong>Note:</strong> These add-ins require Office 365 or Office 2016 or later. For development and testing, ensure your local server is running before using the add-ins.
-                </div>
-                
-                <h4 style="margin-top: 25px; margin-bottom: 15px;">Alternative: Sideload for Development</h4>
-                <ol class="steps">
-                    <li>For development purposes, you can also sideload the add-in directly</li>
-                    <li>Place the manifest file in a network share or local folder</li>
-                    <li>Add the folder path to the Trusted Add-in Catalogs in Office</li>
-                    <li>Go to <code>File</code> → <code>Options</code> → <code>Trust Center</code> → <code>Trust Center Settings</code> → <code>Trusted Add-in Catalogs</code></li>
-                    <li>Add the folder URL/path and check "Show in Menu"</li>
-                </ol>
-            </div>
+      <header>
+        <div class="logo">
+          <svg width="96" height="24" viewBox="0 0 96 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M84 0H72V24H84V0Z" fill="#FE9C1A"/>
+            <path d="M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24Z" fill="#E2F78C"/>
+            <path d="M36 24C42.6274 24 48 18.6274 48 12C48 5.37258 42.6274 0 36 0C29.3726 0 24 5.37258 24 12C24 18.6274 29.3726 24 36 24Z" fill="#FFC3DF"/>
+            <path d="M12 0H0V24H12V0Z" fill="#418B5C"/>
+            <path d="M48 0H24V12H48V0Z" fill="#E14322"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M60 12C56.6863 12 54 9.31371 54 6C54 2.68629 56.6863 0 60 0H96V12H60Z" fill="#3B82F6"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M48 24V12H60C63.3137 12 66 14.6863 66 18C66 21.3137 63.3137 24 60 24H48Z" fill="#9FDBFF"/>
+          </svg>
         </div>
+        <h1>Office Add-ins</h1>
+        <p class="subtitle">Install AI-powered add-ins for Excel and PowerPoint</p>
+      </header>
+
+      <div class="content">
+        <div class="addins-grid">
+          <div class="addin-card">
+            <div class="addin-header">
+              <div class="addin-icon excel-icon">📊</div>
+              <h2>Excel Add-in</h2>
+            </div>
+            <p class="addin-description">
+              Use AI agents in your spreadsheets to analyze data, generate insights, and automate tasks.
+            </p>
+            <a
+              href="excel/manifest.xml"
+              download="excel-manifest.xml"
+              class="download-btn"
+            >
+              Download Excel Manifest
+            </a>
+          </div>
+
+          <div class="addin-card">
+            <div class="addin-header">
+              <div class="addin-icon powerpoint-icon">📽️</div>
+              <h2>PowerPoint Add-in</h2>
+            </div>
+            <p class="addin-description">
+              Enhance your presentations with AI-powered content generation and formatting.
+            </p>
+            <a
+              href="powerpoint/manifest.xml"
+              download="powerpoint-manifest.xml"
+              class="download-btn"
+            >
+              Download PowerPoint Manifest
+            </a>
+          </div>
+        </div>
+
+        <div class="instructions">
+          <h3>Installation Instructions</h3>
+
+          <h4>For Excel Add-in:</h4>
+          <ol class="steps">
+            <li>Download the Excel manifest file using the button above</li>
+            <li>
+              Open Excel and go to <code>Insert</code> →
+              <code>Get Add-ins</code> (or <code>Insert</code> →
+              <code>My Add-ins</code>)
+            </li>
+            <li>
+              Click on <code>Manage My Add-ins</code> →
+              <code>Upload My Add-in</code>
+            </li>
+            <li>
+              Browse and select the downloaded
+              <code>excel-manifest.xml</code> file
+            </li>
+            <li>Click <code>Upload</code> to install the add-in</li>
+            <li>The add-in will appear in the <code>Home</code> tab ribbon</li>
+          </ol>
+
+          <h4>For PowerPoint Add-in:</h4>
+          <ol class="steps">
+            <li>
+              Download the PowerPoint manifest file using the button above
+            </li>
+            <li>
+              Open PowerPoint and go to <code>Insert</code> →
+              <code>Get Add-ins</code> (or <code>Insert</code> →
+              <code>My Add-ins</code>)
+            </li>
+            <li>
+              Click on <code>Manage My Add-ins</code> →
+              <code>Upload My Add-in</code>
+            </li>
+            <li>
+              Browse and select the downloaded
+              <code>powerpoint-manifest.xml</code> file
+            </li>
+            <li>Click <code>Upload</code> to install the add-in</li>
+            <li>The add-in will appear in the <code>Home</code> tab ribbon</li>
+          </ol>
+
+          <div class="note">
+            <strong>Note:</strong> These add-ins require Office 365 or Office 2016 or later. For development and testing, ensure your local server is running before using the add-ins.
+          </div>
+          
+          <h4>Alternative: Sideload for Development</h4>
+          <ol class="steps">
+            <li>For development purposes, you can also sideload the add-in directly</li>
+            <li>Place the manifest file in a network share or local folder</li>
+            <li>Add the folder path to the Trusted Add-in Catalogs in Office</li>
+            <li>Go to <code>File</code> → <code>Options</code> → <code>Trust Center</code> → <code>Trust Center Settings</code> → <code>Trusted Add-in Catalogs</code></li>
+            <li>Add the folder URL/path and check "Show in Menu"</li>
+          </ol>
+        </div>
+      </div>
     </div>
-</body>
+  </body>
 </html>
