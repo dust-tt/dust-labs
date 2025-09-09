@@ -14,13 +14,7 @@ Office.onReady((info) => {
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
         document.getElementById("saveSetup").onclick = saveCredentials;
         document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
-        // Set up remove button after a small delay to ensure DOM is ready
-        setTimeout(() => {
-            const removeBtn = document.getElementById("removeCredentialsBtn");
-            if (removeBtn) {
-                removeBtn.onclick = removeCredentials;
-            }
-        }, 100);
+        document.getElementById("removeCredentialsBtn").onclick = removeCredentials;
         
         // Initialize
         checkCredentialsAndInitialize();
@@ -72,6 +66,12 @@ function showCredentialSetup() {
     document.getElementById("myForm").style.display = "none";
     document.getElementById("updateCredentialsBtn").style.display = "none";
     
+    // Hide error message initially
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
+    }
+    
     // Load existing credentials if any
     const existingWorkspace = getFromStorage("workspaceId");
     const existingToken = getFromStorage("dustToken");
@@ -84,8 +84,6 @@ function showCredentialSetup() {
     const removeBtn = document.getElementById("removeCredentialsBtn");
     if (removeBtn) {
         removeBtn.style.display = (existingWorkspace || existingToken) ? "block" : "none";
-        // Re-attach click handler
-        removeBtn.onclick = removeCredentials;
     }
 }
 
@@ -116,13 +114,34 @@ function removeCredentials() {
             removeBtn.style.display = "none";
         }
         
+        // Hide error message
+        const errorDiv = document.getElementById("credentialError");
+        if (errorDiv) {
+            errorDiv.style.display = "none";
+        }
+        
         // Clear the assistant dropdown
         const select = document.getElementById("assistant");
         select.innerHTML = '<option value=""></option>';
         select.disabled = true;
         
-        // Show credential setup
-        showCredentialSetup();
+        // Reset Select2
+        $("#assistant").select2({
+            placeholder: "Loading agents...",
+            allowClear: true,
+            width: "100%"
+        });
+        
+        // Clear any error messages in the main form
+        const loadError = document.getElementById("loadError");
+        if (loadError) {
+            loadError.style.display = "none";
+        }
+        
+        // Show credential setup as if starting fresh
+        document.getElementById("credentialSetup").style.display = "block";
+        document.getElementById("myForm").style.display = "none";
+        document.getElementById("updateCredentialsBtn").style.display = "none";
     }
 }
 
@@ -131,8 +150,17 @@ async function saveCredentials() {
     const dustToken = document.getElementById("dustToken").value;
     const region = document.getElementById("region").value;
     
+    // Hide any previous error
+    const errorDiv = document.getElementById("credentialError");
+    if (errorDiv) {
+        errorDiv.style.display = "none";
+    }
+    
     if (!workspaceId || !dustToken) {
-        alert("Please enter both Workspace ID and API Key");
+        if (errorDiv) {
+            errorDiv.textContent = "Please enter both Workspace ID and API Key";
+            errorDiv.style.display = "block";
+        }
         return;
     }
     
@@ -155,6 +183,11 @@ async function saveCredentials() {
         // Credentials are valid, save the configured flag
         saveToStorage("credentialsConfigured", "true");
         
+        // Hide error if it was showing
+        if (errorDiv) {
+            errorDiv.style.display = "none";
+        }
+        
         // Switch to main form
         showMainForm();
         loadAssistants();
@@ -166,7 +199,11 @@ async function saveCredentials() {
         localStorage.removeItem("dust_excel_region");
         localStorage.removeItem("dust_excel_credentialsConfigured");
         
-        alert(error.message || "Failed to validate credentials. Please check your Workspace ID and API Key.");
+        // Show error message
+        if (errorDiv) {
+            errorDiv.textContent = "❌ Invalid credentials. Please check your Workspace ID and API Key.";
+            errorDiv.style.display = "block";
+        }
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
