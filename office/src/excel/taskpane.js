@@ -375,7 +375,12 @@ async function updateRangeInfo(rangeNotation) {
 function cancelProcessing() {
     cancelRequested = true;
     document.getElementById("cancelBtn").style.display = "none";
-    document.getElementById("status").innerHTML = '⏸️ Cancelling...';
+    document.getElementById("submitBtn").disabled = false;
+    document.getElementById("status").innerHTML = '⏹️ Processing cancelled';
+    processingProgress.status = "cancelled";
+    setTimeout(() => {
+        document.getElementById("status").innerHTML = '';
+    }, 3000);
 }
 
 // Process functions
@@ -552,10 +557,6 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                 const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
                 
                 const promises = batch.map(async (item) => {
-                    // Skip if cancelled
-                    if (cancelRequested) {
-                        return;
-                    }
                     const payload = {
                         message: {
                             content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
@@ -588,21 +589,28 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                         
                         const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
                         
-                        const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                        targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
-                        targetCell.format.fill.color = "#f0f9ff"; // Light blue background
-                        
-                        // Sync immediately to update the cell in Excel
-                        await context.sync();
+                        // Only update cell if not cancelled
+                        if (!cancelRequested) {
+                            const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                            targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
+                            targetCell.format.fill.color = "#f0f9ff"; // Light blue background
+                            
+                            // Sync immediately to update the cell in Excel
+                            await context.sync();
+                        }
                         
                     } catch (error) {
                         console.error("Error processing cell:", error);
-                        const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                        targetCell.values = [["Error: " + error.message]];
-                        targetCell.format.fill.color = "#fee2e2"; // Light red background
                         
-                        // Sync immediately to update the cell in Excel
-                        await context.sync();
+                        // Only update cell with error if not cancelled
+                        if (!cancelRequested) {
+                            const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                            targetCell.values = [["Error: " + error.message]];
+                            targetCell.format.fill.color = "#fee2e2"; // Light red background
+                            
+                            // Sync immediately to update the cell in Excel
+                            await context.sync();
+                        }
                     }
                     
                     if (!cancelRequested) {
@@ -628,6 +636,9 @@ function updateProgressDisplay() {
     const statusDiv = document.getElementById("status");
     if (processingProgress.status === "processing" && !cancelRequested) {
         statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
+    } else if (processingProgress.status === "cancelled") {
+        // Don't update the display if cancelled
+        return;
     }
 }
 
