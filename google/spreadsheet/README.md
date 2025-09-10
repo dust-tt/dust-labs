@@ -62,6 +62,7 @@ The script requires the following permissions:
 - API rate limits apply based on your Dust plan
 - Processing time increases with the number of cells
 - Maximum cell content length is determined by Dust API limits
+- Only published agents are available for prompting
 
 ## Troubleshooting
 
