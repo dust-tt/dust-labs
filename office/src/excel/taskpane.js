@@ -373,13 +373,20 @@ async function updateRangeInfo(rangeNotation) {
 
 // Cancel processing
 function cancelProcessing() {
+    // Prevent multiple cancel clicks
+    if (cancelRequested || processingProgress.status === "cancelled") {
+        return;
+    }
+    
     cancelRequested = true;
+    processingProgress.status = "cancelled";
     document.getElementById("cancelBtn").style.display = "none";
+    document.getElementById("cancelBtn").disabled = true;
     document.getElementById("submitBtn").disabled = false;
     document.getElementById("status").innerHTML = '⏹️ Processing cancelled';
-    processingProgress.status = "cancelled";
     setTimeout(() => {
         document.getElementById("status").innerHTML = '';
+        cancelRequested = false; // Reset for next run
     }, 3000);
 }
 
@@ -407,8 +414,10 @@ async function handleSubmit(e) {
     }
     
     cancelRequested = false;
+    processingProgress.status = "idle";
     document.getElementById("submitBtn").disabled = true;
     document.getElementById("cancelBtn").style.display = "block";
+    document.getElementById("cancelBtn").disabled = false;
     document.getElementById("status").innerHTML = '<div class="spinner"></div> Analyzing selection...';
     
     try {
@@ -541,7 +550,9 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
             }
         
             const totalCells = cellsToProcess.length;
+            // Reset and set processing status
             processingProgress = { current: 0, total: totalCells, status: "processing" };
+            cancelRequested = false;
             updateProgressDisplay();
             
             console.log("Processing", totalCells, "cells");
@@ -613,7 +624,8 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                         }
                     }
                     
-                    if (!cancelRequested) {
+                    // Only increment progress if not cancelled
+                    if (!cancelRequested && processingProgress.status !== "cancelled") {
                         processingProgress.current++;
                         updateProgressDisplay();
                     }
