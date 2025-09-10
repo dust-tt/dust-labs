@@ -426,149 +426,169 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
         throw new Error("Please configure your Dust credentials first");
     }
     
-    
-    await Excel.run(async (context) => {
-        const sheet = context.workbook.worksheets.getActiveWorksheet();
-        const selectedRange = sheet.getRange(rangeA1Notation);
-        selectedRange.load(["values", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
-        await context.sync();
-        
-        const selectedValues = selectedRange.values;
-        const numColumns = selectedRange.columnCount;
-        const numRows = selectedRange.rowCount;
-        const startRow = selectedRange.rowIndex;
-        const startCol = selectedRange.columnIndex;
-        const targetColIndex = columnToIndex(targetColumn) - 1; // Convert to 0-based
-        
-        // Get headers if multiple columns
-        let headers = [];
-        if (numColumns > 1) {
-            // Calculate the header row index relative to the selection
-            const headerRowIndex = headerRow - 1 - startRow;
+    try {
+        await Excel.run(async (context) => {
+            console.log("Starting Excel.run with range:", rangeA1Notation, "targetColumn:", targetColumn, "headerRow:", headerRow);
             
-            if (headerRowIndex >= 0 && headerRowIndex < numRows) {
-                // Header is within the selected range
-                headers = selectedValues[headerRowIndex];
-            } else if (headerRow > 0) {
-                // Header is outside the selected range, fetch it separately
-                const headerRange = sheet.getRange(headerRow - 1, startCol, 1, numColumns);
-                headerRange.load("values");
-                await context.sync();
-                headers = headerRange.values[0];
+            const sheet = context.workbook.worksheets.getActiveWorksheet();
+            const selectedRange = sheet.getRange(rangeA1Notation);
+            selectedRange.load(["values", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+            await context.sync();
+            
+            console.log("Range loaded - rows:", selectedRange.rowCount, "cols:", selectedRange.columnCount, 
+                       "startRow:", selectedRange.rowIndex, "startCol:", selectedRange.columnIndex);
+            
+            const selectedValues = selectedRange.values;
+            const numColumns = selectedRange.columnCount;
+            const numRows = selectedRange.rowCount;
+            const startRow = selectedRange.rowIndex;
+            const startCol = selectedRange.columnIndex;
+            const targetColIndex = columnToIndex(targetColumn) - 1; // Convert to 0-based
+            
+            console.log("Target column index:", targetColIndex);
+            
+            // Get headers if multiple columns
+            let headers = [];
+            if (numColumns > 1) {
+                // Calculate the header row index relative to the selection
+                const headerRowIndex = headerRow - 1 - startRow;
+                
+                console.log("Header row index calculation: headerRow=", headerRow, "startRow=", startRow, "headerRowIndex=", headerRowIndex);
+                
+                if (headerRowIndex >= 0 && headerRowIndex < numRows) {
+                    // Header is within the selected range
+                    headers = selectedValues[headerRowIndex];
+                    console.log("Headers from selection:", headers);
+                } else if (headerRow > 0) {
+                    // Header is outside the selected range, fetch it separately
+                    console.log("Fetching headers from row", headerRow - 1, "cols", startCol, "to", startCol + numColumns - 1);
+                    const headerRange = sheet.getRangeByIndexes(headerRow - 1, startCol, 1, numColumns);
+                    headerRange.load("values");
+                    await context.sync();
+                    headers = headerRange.values[0];
+                    console.log("Headers fetched separately:", headers);
+                }
             }
-        }
-        
-        const cellsToProcess = [];
-        
-        for (let i = 0; i < numRows; i++) {
-            const currentRow = startRow + i;
-            const actualRowNumber = currentRow + 1; // 1-based row number for display
             
-            // Skip header row if processing multiple columns
-            if (numColumns > 1 && actualRowNumber === headerRow) {
-                continue;
-            }
+            const cellsToProcess = [];
             
-            let inputContent = "";
-            
-            if (numColumns === 1) {
-                const inputValue = selectedValues[i][0];
-                if (!inputValue) {
-                    const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
-                    targetCell.values = [["No input value"]];
+            for (let i = 0; i < numRows; i++) {
+                const currentRow = startRow + i;
+                const actualRowNumber = currentRow + 1; // 1-based row number for display
+                
+                // Skip header row if processing multiple columns
+                if (numColumns > 1 && actualRowNumber === headerRow) {
+                    console.log("Skipping header row at", actualRowNumber);
                     continue;
                 }
-                inputContent = inputValue.toString();
-            } else {
-                const rowValues = selectedValues[i];
-                const contentParts = [];
                 
-                for (let j = 0; j < numColumns; j++) {
-                    const header = headers[j] || `Column ${j + 1}`;
-                    const value = rowValues[j] || "";
-                    contentParts.push(`${header}: ${value}`);
+                let inputContent = "";
+                
+                if (numColumns === 1) {
+                    const inputValue = selectedValues[i][0];
+                    if (!inputValue) {
+                        const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
+                        targetCell.values = [["No input value"]];
+                        continue;
+                    }
+                    inputContent = inputValue.toString();
+                } else {
+                    const rowValues = selectedValues[i];
+                    const contentParts = [];
+                    
+                    for (let j = 0; j < numColumns; j++) {
+                        const header = headers[j] || `Column ${j + 1}`;
+                        const value = rowValues[j] || "";
+                        contentParts.push(`${header}: ${value}`);
+                    }
+                    
+                    inputContent = contentParts.join("\n");
+                    
+                    if (!inputContent.trim()) {
+                        const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
+                        targetCell.values = [["No input value"]];
+                        continue;
+                    }
                 }
                 
-                inputContent = contentParts.join("\n");
+                cellsToProcess.push({
+                    row: currentRow,
+                    col: targetColIndex,
+                    inputContent: inputContent
+                });
+            }
+        
+            const totalCells = cellsToProcess.length;
+            processingProgress = { current: 0, total: totalCells, status: "processing" };
+            updateProgressDisplay();
+            
+            console.log("Processing", totalCells, "cells");
+            
+            // Process in batches
+            for (let i = 0; i < cellsToProcess.length; i += BATCH_SIZE) {
+                const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
                 
-                if (!inputContent.trim()) {
-                    const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
-                    targetCell.values = [["No input value"]];
-                    continue;
+                const promises = batch.map(async (item) => {
+                    const payload = {
+                        message: {
+                            content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
+                            mentions: [{ configurationId: assistantId }],
+                            context: {
+                                username: "excel",
+                                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                fullName: "Excel User",
+                                email: "excel@dust.tt",
+                                profilePictureUrl: "",
+                                origin: "excel"
+                            }
+                        },
+                        blocking: true,
+                        title: "Excel Conversation",
+                        visibility: "unlisted",
+                        skipToolsValidation: true
+                    };
+                    
+                    try {
+                        const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+                        const result = await callDustAPI(apiPath, {
+                            method: "POST",
+                            body: payload,
+                            headers: {
+                                "Authorization": "Bearer " + token
+                            }
+                        });
+                        const content = result.conversation.content;
+                        
+                        const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
+                        
+                        const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                        targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
+                        targetCell.format.fill.color = "#f0f9ff"; // Light blue background
+                        
+                    } catch (error) {
+                        console.error("Error processing cell:", error);
+                        const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                        targetCell.values = [["Error: " + error.message]];
+                        targetCell.format.fill.color = "#fee2e2"; // Light red background
+                    }
+                    
+                    processingProgress.current++;
+                    updateProgressDisplay();
+                });
+                
+                await Promise.all(promises);
+                
+                if (i + BATCH_SIZE < cellsToProcess.length) {
+                    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
                 }
             }
             
-            cellsToProcess.push({
-                row: currentRow,
-                col: targetColIndex,
-                inputContent: inputContent
-            });
-        }
-        
-        const totalCells = cellsToProcess.length;
-        processingProgress = { current: 0, total: totalCells, status: "processing" };
-        updateProgressDisplay();
-        
-        // Process in batches
-        for (let i = 0; i < cellsToProcess.length; i += BATCH_SIZE) {
-            const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
-            
-            const promises = batch.map(async (item) => {
-                const payload = {
-                    message: {
-                        content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
-                        mentions: [{ configurationId: assistantId }],
-                        context: {
-                            username: "excel",
-                            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                            fullName: "Excel User",
-                            email: "excel@dust.tt",
-                            profilePictureUrl: "",
-                            origin: "excel"
-                        }
-                    },
-                    blocking: true,
-                    title: "Excel Conversation",
-                    visibility: "unlisted",
-                    skipToolsValidation: true
-                };
-                
-                try {
-                    const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
-                    const result = await callDustAPI(apiPath, {
-                        method: "POST",
-                        body: payload,
-                        headers: {
-                            "Authorization": "Bearer " + token
-                        }
-                    });
-                    const content = result.conversation.content;
-                    
-                    const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
-                    
-                    const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                    targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
-                    targetCell.format.fill.color = "#f0f9ff"; // Light blue background
-                    
-                } catch (error) {
-                    const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                    targetCell.values = [["Error: " + error.message]];
-                    targetCell.format.fill.color = "#fee2e2"; // Light red background
-                }
-                
-                processingProgress.current++;
-                updateProgressDisplay();
-            });
-            
-            await Promise.all(promises);
-            
-            if (i + BATCH_SIZE < cellsToProcess.length) {
-                await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
-            }
-        }
-        
-        await context.sync();
-    });
+            await context.sync();
+        });
+    } catch (error) {
+        console.error("Excel.run error:", error);
+        throw error;
+    }
 }
 
 function updateProgressDisplay() {
