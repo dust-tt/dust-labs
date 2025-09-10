@@ -55,11 +55,18 @@ async function callDustAPI(path, options = {}) {
     }
     
     try {
-        const response = await fetch(proxyUrl + '?' + params.toString(), {
+        const fetchOptions = {
             method: options.method || 'GET',
             headers: headers,
             body: options.body ? JSON.stringify(options.body) : undefined,
-        });
+        };
+        
+        // Add abort signal if provided
+        if (options.signal) {
+            fetchOptions.signal = options.signal;
+        }
+        
+        const response = await fetch(proxyUrl + '?' + params.toString(), fetchOptions);
         
         if (!response.ok) {
             const error = await response.json();
@@ -68,7 +75,10 @@ async function callDustAPI(path, options = {}) {
         
         return await response.json();
     } catch (error) {
-        console.error('Dust API call failed:', error);
+        // Don't log abort errors
+        if (error.name !== 'AbortError') {
+            console.error('Dust API call failed:', error);
+        }
         throw error;
     }
 }

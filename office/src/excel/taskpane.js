@@ -3,6 +3,8 @@
 const DUST_VERSION = "0.1";
 let processingProgress = { current: 0, total: 0, status: "idle" };
 let cancelRequested = false;
+let currentAbortController = null;
+let currentProcessingId = null;
 
 // Initialize Office
 Office.onReady((info) => {
@@ -380,6 +382,16 @@ function cancelProcessing() {
     
     cancelRequested = true;
     processingProgress.status = "cancelled";
+    
+    // Abort all ongoing requests
+    if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
+    
+    // Clear the processing ID to prevent UI updates from cancelled requests
+    currentProcessingId = null;
+    
     document.getElementById("cancelBtn").style.display = "none";
     document.getElementById("cancelBtn").disabled = true;
     document.getElementById("submitBtn").disabled = false;
@@ -413,6 +425,13 @@ async function handleSubmit(e) {
         return;
     }
     
+    // Generate a unique ID for this processing run
+    const processingId = Date.now() + '_' + Math.random();
+    currentProcessingId = processingId;
+    
+    // Create new abort controller for this run
+    currentAbortController = new AbortController();
+    
     cancelRequested = false;
     processingProgress.status = "idle";
     document.getElementById("submitBtn").disabled = true;
@@ -426,29 +445,42 @@ async function handleSubmit(e) {
             document.getElementById("instructions").value,
             cellRange.value,
             targetColumn,
-            parseInt(document.getElementById("headerRow").value) || 1
+            parseInt(document.getElementById("headerRow").value) || 1,
+            processingId,
+            currentAbortController.signal
         );
         
-        document.getElementById("submitBtn").disabled = false;
-        document.getElementById("cancelBtn").style.display = "none";
-        if (cancelRequested) {
-            document.getElementById("status").innerHTML = '⏹️ Processing cancelled';
-        } else {
-            document.getElementById("status").innerHTML = '✅ Processing complete';
+        // Only update UI if this is the current processing run
+        if (processingId === currentProcessingId) {
+            document.getElementById("submitBtn").disabled = false;
+            document.getElementById("cancelBtn").style.display = "none";
+            if (cancelRequested) {
+                document.getElementById("status").innerHTML = '⏹️ Processing cancelled';
+            } else {
+                document.getElementById("status").innerHTML = '✅ Processing complete';
+            }
+            setTimeout(() => {
+                if (processingId === currentProcessingId) {
+                    document.getElementById("status").innerHTML = '';
+                }
+            }, 3000);
         }
-        setTimeout(() => {
-            document.getElementById("status").innerHTML = '';
-        }, 3000);
     } catch (error) {
-        document.getElementById("submitBtn").disabled = false;
-        document.getElementById("cancelBtn").style.display = "none";
-        document.getElementById("status").textContent = '❌ Error: ' + error.message;
+        // Only update UI if this is the current processing run
+        if (processingId === currentProcessingId) {
+            document.getElementById("submitBtn").disabled = false;
+            document.getElementById("cancelBtn").style.display = "none";
+            if (error.name !== 'AbortError') {
+                document.getElementById("status").textContent = '❌ Error: ' + error.message;
+            }
+        }
     }
 }
 
-async function processWithAssistant(assistantId, instructions, rangeA1Notation, targetColumn, headerRow) {
-    const BATCH_SIZE = 10;
-    const BATCH_DELAY = 1000;
+async function processWithAssistant(assistantId, instructions, rangeA1Notation, targetColumn, headerRow, processingId, abortSignal) {
+    let BATCH_SIZE = 10;
+    let BATCH_DELAY = 1000;
+    let retryDelay = 1000; // Initial retry delay for rate limits
     
     const token = getFromStorage("dustToken");
     const workspaceId = getFromStorage("workspaceId");
@@ -553,7 +585,7 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
             // Reset and set processing status
             processingProgress = { current: 0, total: totalCells, status: "processing" };
             cancelRequested = false;
-            updateProgressDisplay();
+            updateProgressDisplay(processingId);
             
             console.log("Processing", totalCells, "cells");
             
@@ -568,7 +600,18 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                 const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
                 
                 const promises = batch.map(async (item) => {
-                    const payload = {
+                    // Check if this processing was cancelled or replaced
+                    if (processingId !== currentProcessingId) {
+                        return;
+                    }
+                    
+                    // Retry logic for rate limits
+                    let retries = 0;
+                    const maxRetries = 3;
+                    let lastError = null;
+                    
+                    while (retries <= maxRetries && processingId === currentProcessingId && !cancelRequested) {
+                        const payload = {
                         message: {
                             content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
                             mentions: [{ configurationId: assistantId }],
@@ -587,52 +630,95 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                         skipToolsValidation: true
                     };
                     
-                    try {
-                        const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
-                        const result = await callDustAPI(apiPath, {
-                            method: "POST",
-                            body: payload,
-                            headers: {
-                                "Authorization": "Bearer " + token
+                        try {
+                            const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+                            const result = await callDustAPI(apiPath, {
+                                method: "POST",
+                                body: payload,
+                                headers: {
+                                    "Authorization": "Bearer " + token
+                                },
+                                signal: abortSignal
+                            });
+                            const content = result.conversation.content;
+                            
+                            const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
+                            
+                            // Only update cell if this is still the current processing
+                            if (processingId === currentProcessingId && !cancelRequested) {
+                                const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                                targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
+                                targetCell.format.fill.color = "#f0f9ff"; // Light blue background
+                                
+                                // Sync immediately to update the cell in Excel
+                                await context.sync();
                             }
-                        });
-                        const content = result.conversation.content;
-                        
-                        const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
-                        
-                        // Only update cell if not cancelled
-                        if (!cancelRequested) {
-                            const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                            targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
-                            targetCell.format.fill.color = "#f0f9ff"; // Light blue background
                             
-                            // Sync immediately to update the cell in Excel
-                            await context.sync();
-                        }
-                        
-                    } catch (error) {
-                        console.error("Error processing cell:", error);
-                        
-                        // Only update cell with error if not cancelled
-                        if (!cancelRequested) {
-                            const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                            targetCell.values = [["Error: " + error.message]];
-                            targetCell.format.fill.color = "#fee2e2"; // Light red background
+                            // Success - exit retry loop
+                            break;
                             
-                            // Sync immediately to update the cell in Excel
-                            await context.sync();
+                        } catch (error) {
+                            lastError = error;
+                            
+                            // Check if it's an abort error
+                            if (error.name === 'AbortError') {
+                                break;
+                            }
+                            
+                            // Check if it's a rate limit error (429) or contains rate limit message
+                            const isRateLimit = error.message.includes('429') || 
+                                              error.message.toLowerCase().includes('rate limit') ||
+                                              error.message.toLowerCase().includes('too many requests');
+                            
+                            if (isRateLimit && retries < maxRetries) {
+                                retries++;
+                                console.log(`Rate limit hit, retry ${retries}/${maxRetries} after ${retryDelay}ms`);
+                                
+                                // Update status to show rate limiting
+                                if (processingId === currentProcessingId) {
+                                    const statusDiv = document.getElementById("status");
+                                    statusDiv.innerHTML = `<div class="spinner"></div> Rate limited, slowing down... (${processingProgress.current}/${processingProgress.total})`;
+                                }
+                                
+                                // Wait with exponential backoff
+                                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                                retryDelay = Math.min(retryDelay * 2, 30000); // Max 30 seconds
+                                
+                                // Reduce batch size and increase delay for future batches
+                                if (retries === 1) {
+                                    BATCH_SIZE = Math.max(Math.floor(BATCH_SIZE / 2), 1);
+                                    BATCH_DELAY = BATCH_DELAY * 2;
+                                    console.log(`Adjusted batch size to ${BATCH_SIZE}, delay to ${BATCH_DELAY}ms`);
+                                }
+                            } else {
+                                // Not a rate limit error or max retries reached
+                                console.error("Error processing cell:", error);
+                                
+                                // Only update cell with error if this is still the current processing
+                                if (processingId === currentProcessingId && !cancelRequested) {
+                                    const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
+                                    targetCell.values = [["Error: " + error.message]];
+                                    targetCell.format.fill.color = "#fee2e2"; // Light red background
+                                    
+                                    // Sync immediately to update the cell in Excel
+                                    await context.sync();
+                                }
+                                break;
+                            }
                         }
                     }
                     
-                    // Only increment progress if not cancelled
-                    if (!cancelRequested && processingProgress.status !== "cancelled") {
+                    
+                    // Only increment progress if this is still the current processing
+                    if (processingId === currentProcessingId && !cancelRequested && processingProgress.status !== "cancelled") {
                         processingProgress.current++;
-                        updateProgressDisplay();
+                        updateProgressDisplay(processingId);
                     }
                 });
                 
                 await Promise.all(promises);
                 
+                // Use the potentially adjusted BATCH_DELAY
                 if (i + BATCH_SIZE < cellsToProcess.length) {
                     await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
                 }
@@ -644,7 +730,12 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
     }
 }
 
-function updateProgressDisplay() {
+function updateProgressDisplay(processingId) {
+    // Only update if this is the current processing
+    if (processingId !== currentProcessingId) {
+        return;
+    }
+    
     const statusDiv = document.getElementById("status");
     if (processingProgress.status === "processing" && !cancelRequested) {
         statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
