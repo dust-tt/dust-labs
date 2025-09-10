@@ -433,6 +433,7 @@ async function handleSubmit(e) {
     currentAbortController = new AbortController();
     
     cancelRequested = false;
+    isRateLimited = false;
     processingProgress.status = "idle";
     document.getElementById("submitBtn").disabled = true;
     document.getElementById("cancelBtn").style.display = "block";
@@ -676,8 +677,19 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                                 
                                 // Update status to show rate limiting
                                 if (processingId === currentProcessingId) {
-                                    const statusDiv = document.getElementById("status");
-                                    statusDiv.innerHTML = `<div class="spinner"></div> Rate limited, slowing down... (${processingProgress.current}/${processingProgress.total})`;
+                                    isRateLimited = true;
+                                    // Clear any existing timeout
+                                    if (rateLimitTimeout) {
+                                        clearTimeout(rateLimitTimeout);
+                                    }
+                                    // Keep the rate limit message for at least 5 seconds
+                                    rateLimitTimeout = setTimeout(() => {
+                                        if (processingId === currentProcessingId) {
+                                            isRateLimited = false;
+                                            updateProgressDisplay(processingId);
+                                        }
+                                    }, 5000);
+                                    updateProgressDisplay(processingId);
                                 }
                                 
                                 // Wait with exponential backoff
@@ -730,6 +742,9 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
     }
 }
 
+let isRateLimited = false;
+let rateLimitTimeout = null;
+
 function updateProgressDisplay(processingId) {
     // Only update if this is the current processing
     if (processingId !== currentProcessingId) {
@@ -738,7 +753,11 @@ function updateProgressDisplay(processingId) {
     
     const statusDiv = document.getElementById("status");
     if (processingProgress.status === "processing" && !cancelRequested) {
-        statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
+        if (isRateLimited) {
+            statusDiv.innerHTML = `<div class="spinner"></div> Rate limited, slowing down... (${processingProgress.current}/${processingProgress.total})`;
+        } else {
+            statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
+        }
     } else if (processingProgress.status === "cancelled") {
         // Don't update the display if cancelled
         return;
