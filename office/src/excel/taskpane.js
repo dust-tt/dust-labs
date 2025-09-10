@@ -437,16 +437,21 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
         const numColumns = selectedRange.columnCount;
         const numRows = selectedRange.rowCount;
         const startRow = selectedRange.rowIndex;
+        const startCol = selectedRange.columnIndex;
         const targetColIndex = columnToIndex(targetColumn) - 1; // Convert to 0-based
         
         // Get headers if multiple columns
         let headers = [];
         if (numColumns > 1) {
-            const headerRowIndex = headerRow - startRow - 1;
+            // Calculate the header row index relative to the selection
+            const headerRowIndex = headerRow - 1 - startRow;
+            
             if (headerRowIndex >= 0 && headerRowIndex < numRows) {
+                // Header is within the selected range
                 headers = selectedValues[headerRowIndex];
-            } else {
-                const headerRange = sheet.getRange(headerRow, selectedRange.columnIndex + 1, 1, numColumns);
+            } else if (headerRow > 0) {
+                // Header is outside the selected range, fetch it separately
+                const headerRange = sheet.getRange(headerRow - 1, startCol, 1, numColumns);
                 headerRange.load("values");
                 await context.sync();
                 headers = headerRange.values[0];
@@ -456,9 +461,11 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
         const cellsToProcess = [];
         
         for (let i = 0; i < numRows; i++) {
-            const currentRow = startRow + i + 1; // Excel is 1-based
+            const currentRow = startRow + i;
+            const actualRowNumber = currentRow + 1; // 1-based row number for display
             
-            if (numColumns > 1 && currentRow === headerRow) {
+            // Skip header row if processing multiple columns
+            if (numColumns > 1 && actualRowNumber === headerRow) {
                 continue;
             }
             
@@ -467,7 +474,7 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
             if (numColumns === 1) {
                 const inputValue = selectedValues[i][0];
                 if (!inputValue) {
-                    const targetCell = sheet.getCell(currentRow - 1, targetColIndex);
+                    const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
                     targetCell.values = [["No input value"]];
                     continue;
                 }
@@ -485,14 +492,14 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                 inputContent = contentParts.join("\n");
                 
                 if (!inputContent.trim()) {
-                    const targetCell = sheet.getCell(currentRow - 1, targetColIndex);
+                    const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
                     targetCell.values = [["No input value"]];
                     continue;
                 }
             }
             
             cellsToProcess.push({
-                row: currentRow - 1,
+                row: currentRow,
                 col: targetColIndex,
                 inputContent: inputContent
             });
@@ -539,12 +546,12 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                     
                     const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
                     
-                    const targetCell = sheet.getCell(item.row, item.col);
+                    const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
                     targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
                     targetCell.format.fill.color = "#f0f9ff"; // Light blue background
                     
                 } catch (error) {
-                    const targetCell = sheet.getCell(item.row, item.col);
+                    const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
                     targetCell.values = [["Error: " + error.message]];
                     targetCell.format.fill.color = "#fee2e2"; // Light red background
                 }
