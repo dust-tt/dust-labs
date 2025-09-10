@@ -2,6 +2,7 @@
 
 const DUST_VERSION = "0.1";
 let processingProgress = { current: 0, total: 0, status: "idle" };
+let cancelRequested = false;
 
 // Initialize Office
 Office.onReady((info) => {
@@ -15,6 +16,7 @@ Office.onReady((info) => {
         document.getElementById("saveSetup").onclick = saveCredentials;
         document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
         document.getElementById("removeCredentialsBtn").onclick = showRemoveConfirmation;
+        document.getElementById("cancelBtn").onclick = cancelProcessing;
         document.getElementById("confirmRemove").onclick = removeCredentials;
         document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
         
@@ -93,7 +95,7 @@ function showCredentialSetup() {
 function showMainForm() {
     document.getElementById("credentialSetup").style.display = "none";
     document.getElementById("myForm").style.display = "block";
-    document.getElementById("updateCredentialsBtn").style.display = "block";
+    document.getElementById("updateCredentialsBtn").style.display = "inline-block";
 }
 
 // Show remove confirmation
@@ -369,6 +371,13 @@ async function updateRangeInfo(rangeNotation) {
     }
 }
 
+// Cancel processing
+function cancelProcessing() {
+    cancelRequested = true;
+    document.getElementById("cancelBtn").style.display = "none";
+    document.getElementById("status").innerHTML = '⏸️ Cancelling...';
+}
+
 // Process functions
 async function handleSubmit(e) {
     e.preventDefault();
@@ -392,7 +401,9 @@ async function handleSubmit(e) {
         return;
     }
     
+    cancelRequested = false;
     document.getElementById("submitBtn").disabled = true;
+    document.getElementById("cancelBtn").style.display = "block";
     document.getElementById("status").innerHTML = '<div class="spinner"></div> Analyzing selection...';
     
     try {
@@ -405,12 +416,18 @@ async function handleSubmit(e) {
         );
         
         document.getElementById("submitBtn").disabled = false;
-        document.getElementById("status").innerHTML = '✅ Processing complete';
+        document.getElementById("cancelBtn").style.display = "none";
+        if (cancelRequested) {
+            document.getElementById("status").innerHTML = '⏹️ Processing cancelled';
+        } else {
+            document.getElementById("status").innerHTML = '✅ Processing complete';
+        }
         setTimeout(() => {
             document.getElementById("status").innerHTML = '';
         }, 3000);
     } catch (error) {
         document.getElementById("submitBtn").disabled = false;
+        document.getElementById("cancelBtn").style.display = "none";
         document.getElementById("status").textContent = '❌ Error: ' + error.message;
     }
 }
@@ -526,9 +543,19 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
             
             // Process in batches
             for (let i = 0; i < cellsToProcess.length; i += BATCH_SIZE) {
+                // Check if cancellation was requested
+                if (cancelRequested) {
+                    console.log("Processing cancelled by user");
+                    break;
+                }
+                
                 const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
                 
                 const promises = batch.map(async (item) => {
+                    // Skip if cancelled
+                    if (cancelRequested) {
+                        return;
+                    }
                     const payload = {
                         message: {
                             content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
@@ -578,8 +605,10 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                         await context.sync();
                     }
                     
-                    processingProgress.current++;
-                    updateProgressDisplay();
+                    if (!cancelRequested) {
+                        processingProgress.current++;
+                        updateProgressDisplay();
+                    }
                 });
                 
                 await Promise.all(promises);
@@ -597,7 +626,7 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
 
 function updateProgressDisplay() {
     const statusDiv = document.getElementById("status");
-    if (processingProgress.status === "processing") {
+    if (processingProgress.status === "processing" && !cancelRequested) {
         statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
     }
 }

@@ -223,6 +223,24 @@ textarea {
     color: #9ca3af;
 }
 
+.tiny-link {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    font-size: 12px;
+    color: #6b7280;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    transition: color 0.2s ease;
+}
+
+.tiny-link:hover {
+    color: #374151;
+}
+
 /* Credential Setup Panel */
 .credential-setup {
     background-color: #f9fafb;
