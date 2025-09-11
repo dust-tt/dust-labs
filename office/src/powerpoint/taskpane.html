@@ -187,6 +187,18 @@
       </button>
 
       <div class="version">v0.1.7</div>
+      
+      <!-- Debug Console (toggle with Ctrl+Shift+D) -->
+      <div id="debugConsole" style="display: none; position: fixed; bottom: 40px; left: 10px; right: 10px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; max-height: 200px; z-index: 10000;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #333;">
+          <span style="color: #888; font-size: 12px; font-weight: 600;">Debug Console</span>
+          <div style="display: flex; gap: 8px;">
+            <button onclick="clearDebugLog()" style="padding: 2px 8px; font-size: 11px; background: #333; color: #fff; border: none; border-radius: 2px; cursor: pointer;">Clear</button>
+            <button onclick="toggleDebugConsole()" style="padding: 2px 8px; font-size: 11px; background: #333; color: #fff; border: none; border-radius: 2px; cursor: pointer;">×</button>
+          </div>
+        </div>
+        <div id="debugLog" style="padding: 8px; overflow-y: auto; max-height: 150px; font-family: 'Courier New', monospace; font-size: 11px; color: #0f0;"></div>
+      </div>
     </div>
 
     <!-- Custom Confirmation Modal -->
@@ -214,6 +226,95 @@
     </div>
 
     <!-- JavaScript -->
+    <script>
+      // Debug console functions
+      let debugMessages = [];
+      const MAX_DEBUG_MESSAGES = 100;
+      
+      function addDebugMessage(type, ...args) {
+        const timestamp = new Date().toLocaleTimeString();
+        const message = args.map(arg => {
+          if (typeof arg === 'object') {
+            try {
+              return JSON.stringify(arg, null, 2);
+            } catch (e) {
+              return String(arg);
+            }
+          }
+          return String(arg);
+        }).join(' ');
+        
+        debugMessages.push({ timestamp, type, message });
+        if (debugMessages.length > MAX_DEBUG_MESSAGES) {
+          debugMessages.shift();
+        }
+        
+        updateDebugDisplay();
+      }
+      
+      function updateDebugDisplay() {
+        const debugLog = document.getElementById('debugLog');
+        if (debugLog) {
+          debugLog.innerHTML = debugMessages.map(msg => {
+            const color = msg.type === 'error' ? '#f44' : (msg.type === 'warn' ? '#fa0' : '#0f0');
+            return `<div style="margin-bottom: 4px;"><span style="color: #888;">${msg.timestamp}</span> <span style="color: ${color};">${msg.message}</span></div>`;
+          }).join('');
+          debugLog.scrollTop = debugLog.scrollHeight;
+        }
+      }
+      
+      function clearDebugLog() {
+        debugMessages = [];
+        updateDebugDisplay();
+      }
+      
+      function toggleDebugConsole() {
+        const console = document.getElementById('debugConsole');
+        if (console) {
+          console.style.display = console.style.display === 'none' ? 'block' : 'none';
+        }
+      }
+      
+      // Override console methods to capture logs
+      const originalConsole = {
+        log: console.log,
+        error: console.error,
+        warn: console.warn
+      };
+      
+      console.log = function(...args) {
+        originalConsole.log.apply(console, args);
+        addDebugMessage('log', ...args);
+      };
+      
+      console.error = function(...args) {
+        originalConsole.error.apply(console, args);
+        addDebugMessage('error', ...args);
+      };
+      
+      console.warn = function(...args) {
+        originalConsole.warn.apply(console, args);
+        addDebugMessage('warn', ...args);
+      };
+      
+      // Show debug console with keyboard shortcut
+      document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+          e.preventDefault();
+          toggleDebugConsole();
+        }
+      });
+      
+      // Add button to toggle debug console
+      window.addEventListener('load', function() {
+        const debugButton = document.createElement('button');
+        debugButton.innerHTML = '🐛';
+        debugButton.style.cssText = 'position: fixed; bottom: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%; background: #333; color: #fff; border: none; cursor: pointer; z-index: 9999; font-size: 16px;';
+        debugButton.onclick = toggleDebugConsole;
+        debugButton.title = 'Toggle Debug Console (Ctrl+Shift+D)';
+        document.body.appendChild(debugButton);
+      });
+    </script>
     <script src="dust-api.js"></script>
     <script src="taskpane.js"></script>
   </body>
