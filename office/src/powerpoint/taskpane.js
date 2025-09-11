@@ -311,74 +311,127 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
     return textBlocks;
   }
   
-  // First, load shape types to identify which shapes can have text
+  console.log(`[safeExtractText] Processing ${shapes.length} shapes`);
+  
+  // First, load all shape types and IDs in one batch
   for (let item of shapes) {
-    item.shape.load("type,id");
+    try {
+      item.shape.load("type,id,name");
+    } catch (e) {
+      console.log(`[safeExtractText] Error loading shape properties: ${e.message}`);
+    }
   }
   await context.sync();
   
-  // Filter to only shapes that can have text
-  // Shape types that support text: GeometricShape, TextBox, Placeholder
-  const textCapableShapes = shapes.filter(item => {
-    const shapeType = item.shape.type;
-    // These are the shape types that typically have textFrame
-    return shapeType === "GeometricShape" || 
-           shapeType === "TextBox" || 
-           shapeType === "Placeholder" ||
-           shapeType === "Group" ||
-           !shapeType; // Sometimes type is undefined but shape has text
-  });
+  // Identify text-capable shapes
+  const textCapableShapes = [];
+  for (let item of shapes) {
+    try {
+      const shapeType = item.shape.type;
+      const shapeName = item.shape.name || "";
+      
+      // Be more inclusive about what might have text
+      // Some shapes report as undefined or other types but still have text
+      const isLikelyTextCapable = 
+        shapeType === "GeometricShape" || 
+        shapeType === "TextBox" || 
+        shapeType === "Placeholder" ||
+        shapeType === "Group" ||
+        shapeType === "Rectangle" ||
+        shapeType === "RoundRectangle" ||
+        shapeName.toLowerCase().includes("text") ||
+        shapeName.toLowerCase().includes("title") ||
+        shapeName.toLowerCase().includes("content") ||
+        !shapeType; // undefined type might still have text
+      
+      if (isLikelyTextCapable) {
+        textCapableShapes.push(item);
+      }
+    } catch (e) {
+      // If we can't determine type, try to include it anyway
+      textCapableShapes.push(item);
+    }
+  }
   
-  console.log(`[safeExtractText] Found ${textCapableShapes.length} text-capable shapes out of ${shapes.length} total shapes`);
+  console.log(`[safeExtractText] Found ${textCapableShapes.length} potentially text-capable shapes out of ${shapes.length} total shapes`);
   
   if (textCapableShapes.length === 0) {
     return textBlocks;
   }
   
-  // Process each text-capable shape individually with proper error handling
+  // Try to load textFrame for all text-capable shapes in batches
+  const shapesWithTextFrame = [];
+  
+  // First batch: try to load textFrame
   for (let item of textCapableShapes) {
     try {
-      // First try to load the textFrame
       item.shape.load("textFrame");
-      await context.sync();
-      
-      if (item.shape.textFrame) {
-        // Try to load hasText property
-        try {
-          item.shape.textFrame.load("hasText");
-          await context.sync();
-          
-          if (item.shape.textFrame.hasText) {
-            // Try to load the text content
-            try {
-              item.shape.textFrame.load("textRange/text");
-              await context.sync();
-              
-              if (item.shape.textFrame.textRange && item.shape.textFrame.textRange.text) {
-                const text = item.shape.textFrame.textRange.text;
-                if (text.trim()) {
-                  textBlocks.push({
-                    slideIndex: item.slideIndex + slideIndexOffset,
-                    shapeId: item.shape.id,
-                    originalText: text
-                  });
-                  console.log(`[safeExtractText] Extracted text from shape ${item.shape.id}`);
-                }
-              }
-            } catch (e) {
-              console.log(`[safeExtractText] Could not get text from shape ${item.shape.id}: ${e.message}`);
-            }
-          }
-        } catch (e) {
-          console.log(`[safeExtractText] Could not check hasText for shape ${item.shape.id}: ${e.message}`);
-        }
-      }
+      shapesWithTextFrame.push(item);
     } catch (e) {
-      console.log(`[safeExtractText] Shape ${item.shape.id} does not support textFrame: ${e.message}`);
+      // Shape doesn't support textFrame
+      console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
     }
   }
   
-  console.log(`[safeExtractText] Found ${textBlocks.length} text blocks`);
+  if (shapesWithTextFrame.length > 0) {
+    await context.sync();
+    
+    // Second batch: for shapes with textFrame, try to load hasText
+    const shapesToCheckForText = [];
+    for (let item of shapesWithTextFrame) {
+      try {
+        if (item.shape.textFrame) {
+          item.shape.textFrame.load("hasText");
+          shapesToCheckForText.push(item);
+        }
+      } catch (e) {
+        console.log(`[safeExtractText] Could not load hasText for shape ${item.shape.id}`);
+      }
+    }
+    
+    if (shapesToCheckForText.length > 0) {
+      await context.sync();
+      
+      // Third batch: for shapes with text, load the actual text content
+      const shapesWithText = [];
+      for (let item of shapesToCheckForText) {
+        try {
+          if (item.shape.textFrame && item.shape.textFrame.hasText) {
+            item.shape.textFrame.load("textRange/text");
+            shapesWithText.push(item);
+          }
+        } catch (e) {
+          console.log(`[safeExtractText] Could not load text for shape ${item.shape.id}`);
+        }
+      }
+      
+      if (shapesWithText.length > 0) {
+        await context.sync();
+        
+        // Extract the text
+        for (let item of shapesWithText) {
+          try {
+            if (item.shape.textFrame && 
+                item.shape.textFrame.textRange && 
+                item.shape.textFrame.textRange.text) {
+              const text = item.shape.textFrame.textRange.text;
+              if (text.trim()) {
+                textBlocks.push({
+                  slideIndex: item.slideIndex + slideIndexOffset,
+                  shapeId: item.shape.id,
+                  originalText: text
+                });
+              }
+            }
+          } catch (e) {
+            console.log(`[safeExtractText] Error extracting text from shape ${item.shape.id}: ${e.message}`);
+          }
+        }
+      }
+    }
+  }
+  
+  console.log(`[safeExtractText] Successfully extracted ${textBlocks.length} text blocks`);
   
   return textBlocks;
 }
@@ -546,40 +599,107 @@ async function processWithAssistant(assistantId, instructions, scope) {
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning current slide...`;
       
       // Get the currently active slide
-      let targetSlides = [];
-
-      // For PowerPoint Online, getSelectedSlides API is not available
-      // We'll just use the first slide as the "current" slide
-      console.log("[ProcessWithAssistant] Using first slide for 'current slide' mode");
-
-      // If no selected slides, use the first slide as fallback
-      if (targetSlides.length === 0) {
-        console.log('[ProcessWithAssistant] No selected slides, using first slide as fallback');
-        const presentation = context.presentation;
-        presentation.slides.load("items");
+      let targetSlide = null;
+      let targetSlideIndex = -1;
+      
+      try {
+        // Try to get the selected slides (works in desktop PowerPoint)
+        const selectedSlides = context.presentation.getSelectedSlides();
+        selectedSlides.load("items");
         await context.sync();
-        if (presentation.slides.items.length > 0) {
-          targetSlides = [presentation.slides.items[0]];
-          console.log('[ProcessWithAssistant] Using first slide as target');
+        
+        if (selectedSlides.items && selectedSlides.items.length > 0) {
+          targetSlide = selectedSlides.items[0];
+          console.log('[ProcessWithAssistant] Found selected slide');
+          
+          // Find the index of this slide
+          const presentation = context.presentation;
+          presentation.slides.load("items");
+          await context.sync();
+          
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            if (presentation.slides.items[i].id === targetSlide.id) {
+              targetSlideIndex = i;
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.log('[ProcessWithAssistant] getSelectedSlides not available, will use alternative method');
+      }
+      
+      // If we couldn't get selected slide, try to determine the current slide
+      if (!targetSlide) {
+        try {
+          // Try to get the active view and determine current slide from there
+          const presentation = context.presentation;
+          presentation.load("slideMasters");
+          presentation.slides.load("items");
+          await context.sync();
+          
+          // For PowerPoint Online or when getSelectedSlides doesn't work,
+          // we need a different approach. Let's check if there's selected content
+          try {
+            const selectedShapes = context.presentation.getSelectedShapes();
+            selectedShapes.load("items");
+            await context.sync();
+            
+            if (selectedShapes.items && selectedShapes.items.length > 0) {
+              // Find which slide contains these shapes
+              for (let i = 0; i < presentation.slides.items.length; i++) {
+                const slide = presentation.slides.items[i];
+                slide.shapes.load("items/id");
+                await context.sync();
+                
+                // Check if any selected shape belongs to this slide
+                const shapeIds = slide.shapes.items.map(s => s.id);
+                for (let selectedShape of selectedShapes.items) {
+                  selectedShape.load("id");
+                }
+                await context.sync();
+                
+                for (let selectedShape of selectedShapes.items) {
+                  if (shapeIds.includes(selectedShape.id)) {
+                    targetSlide = slide;
+                    targetSlideIndex = i;
+                    console.log(`[ProcessWithAssistant] Found current slide from selected shapes: slide ${i + 1}`);
+                    break;
+                  }
+                }
+                if (targetSlide) break;
+              }
+            }
+          } catch (e) {
+            console.log('[ProcessWithAssistant] Could not determine current slide from selected shapes');
+          }
+          
+          // If still no target slide, use the first slide as fallback
+          if (!targetSlide && presentation.slides.items.length > 0) {
+            targetSlide = presentation.slides.items[0];
+            targetSlideIndex = 0;
+            console.log('[ProcessWithAssistant] Using first slide as fallback');
+          }
+        } catch (e) {
+          console.log('[ProcessWithAssistant] Error determining current slide:', e.message);
         }
       }
-
-      // Load all shapes from target slides
-      console.log('[ProcessWithAssistant] Loading shapes from target slides');
-      for (let slide of targetSlides) {
-        slide.shapes.load("items");
+      
+      if (!targetSlide) {
+        throw new Error("Could not determine the current slide");
       }
+
+      // Load all shapes from the target slide
+      console.log(`[ProcessWithAssistant] Loading shapes from slide ${targetSlideIndex + 1}`);
+      targetSlide.shapes.load("items");
       await context.sync();
-      console.log('[ProcessWithAssistant] Shapes loaded successfully');
+      
+      const totalShapes = targetSlide.shapes.items.length;
+      console.log(`[ProcessWithAssistant] Found ${totalShapes} shapes on current slide`);
 
       // Prepare shapes for safe extraction
       const shapesToCheck = [];
-      let slideIdx = 0;
-      for (let slide of targetSlides) {
-        for (let shape of slide.shapes.items) {
-          shapesToCheck.push({ shape, slideIndex: slideIdx });
-        }
-        slideIdx++;
+      for (let shape of targetSlide.shapes.items) {
+        shapesToCheck.push({ shape, slideIndex: targetSlideIndex });
       }
       
       console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
