@@ -369,8 +369,19 @@ async function handleSubmit(e) {
     }
   } catch (error) {
     if (!processingCancelled) {
-      document.getElementById("status").textContent =
-        "❌ Error: " + error.message;
+      // Show detailed error information
+      const errorDetails = `
+        <div style="color: red; font-size: 12px;">
+          <strong>❌ Error: ${error.message}</strong><br>
+          <div style="font-size: 10px; margin-top: 5px; padding: 5px; background: #f5f5f5; border-radius: 3px; color: #333;">
+            <strong>Type:</strong> ${error.name || 'Unknown'}<br>
+            <strong>Debug Info:</strong> ${error.debugInfo ? JSON.stringify(error.debugInfo) : 'None'}<br>
+            <strong>Stack:</strong><br>
+            <pre style="margin: 0; font-size: 9px; overflow-x: auto; white-space: pre-wrap;">${error.stack || 'No stack trace'}</pre>
+          </div>
+        </div>
+      `;
+      document.getElementById("status").innerHTML = errorDetails;
     }
   } finally {
     // Reset buttons
@@ -395,8 +406,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
   
   console.log(`[ProcessWithAssistant] Starting processing with scope: ${scope}`);
   
-  await PowerPoint.run(async (context) => {
-    let textBlocksToProcess = [];
+  try {
+    await PowerPoint.run(async (context) => {
+      let textBlocksToProcess = [];
     // Store only metadata, not PowerPoint objects
     // Structure: { slideIndex, shapeId, originalText }
     console.log('[ProcessWithAssistant] Initializing text blocks collection');
@@ -493,22 +505,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
       let targetSlides = [];
 
       try {
-        // Try to get selected slides first - this API might not be available in all versions
-        if (context.presentation.getSelectedSlides) {
-          const selectedSlides = context.presentation.getSelectedSlides();
-          selectedSlides.load("items");
-          await context.sync();
-
-          if (selectedSlides.items && selectedSlides.items.length > 0) {
-            targetSlides = selectedSlides.items;
-            console.log(`[ProcessWithAssistant] Found ${targetSlides.length} selected slide(s)`);
-          }
-        } else {
-          console.log("[ProcessWithAssistant] getSelectedSlides API not available");
-        }
+        // Debug: Show what we're attempting
+        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: #666;">Attempting to get current slide...</div>`;
+        
+        // For PowerPoint Online, getSelectedSlides might not be available
+        // Use a safer approach - just get the first slide or all slides
+        console.log("[ProcessWithAssistant] Using safe approach for slide selection");
+        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: #666;">Using safe slide selection approach...</div>`;
+        
       } catch (e) {
-        // getSelectedSlides might not be available or might fail
-        console.log("[ProcessWithAssistant] Could not get selected slides, using fallback:", e.message);
+        // Log the error
+        console.log("[ProcessWithAssistant] Error in slide selection:", e.message);
+        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: orange;">Error: ${e.message}</div>`;
       }
 
       // If no selected slides, use the first slide as fallback
@@ -766,9 +774,26 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
     }
     
-    // Clear the text blocks list to free memory
-    textBlocksToProcess = null;
-  });
+      // Clear the text blocks list to free memory
+      textBlocksToProcess = null;
+    });
+  } catch (contextError) {
+    // Catch errors from PowerPoint.run context
+    console.error('[ProcessWithAssistant] PowerPoint.run error:', contextError);
+    const errorHtml = `
+      <div style="color: red; font-size: 12px;">
+        <strong>❌ PowerPoint Context Error</strong><br>
+        <div style="font-size: 10px; margin-top: 5px; padding: 5px; background: #fee; border-radius: 3px;">
+          <strong>Message:</strong> ${contextError.message}<br>
+          <strong>Name:</strong> ${contextError.name || 'Unknown'}<br>
+          <strong>Code:</strong> ${contextError.code || 'None'}<br>
+          <strong>Trace:</strong> ${contextError.traceMessages ? contextError.traceMessages.join(', ') : 'None'}<br>
+        </div>
+      </div>
+    `;
+    document.getElementById("status").innerHTML = errorHtml;
+    throw contextError;
+  }
   
   // Now apply all the results back to PowerPoint in a NEW context
   if (processedResults.length > 0) {
