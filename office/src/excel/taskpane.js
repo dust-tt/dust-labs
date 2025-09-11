@@ -425,6 +425,63 @@ async function handleSubmit(e) {
         return;
     }
     
+    // Check actual processable row count and warn if over 100
+    let actualRowsToProcess = 0;
+    try {
+        await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getActiveWorksheet();
+            const range = sheet.getRange(cellRange.value);
+            range.load(["values", "rowCount", "columnCount"]);
+            await context.sync();
+            
+            const numColumns = range.columnCount;
+            const headerRow = parseInt(document.getElementById("headerRow").value) || 1;
+            
+            // Count non-empty rows that will actually be processed
+            for (let i = 0; i < range.rowCount; i++) {
+                const actualRowNumber = range.rowIndex + i + 1; // 1-based row number
+                
+                // Skip header row if processing multiple columns
+                if (numColumns > 1 && actualRowNumber === headerRow) {
+                    continue;
+                }
+                
+                // Check if row has any content
+                const rowValues = range.values[i];
+                let hasContent = false;
+                
+                if (numColumns === 1) {
+                    hasContent = rowValues[0] && rowValues[0].toString().trim() !== "";
+                } else {
+                    // For multiple columns, check if any cell has content
+                    for (let j = 0; j < numColumns; j++) {
+                        if (rowValues[j] && rowValues[j].toString().trim() !== "") {
+                            hasContent = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (hasContent) {
+                    actualRowsToProcess++;
+                }
+            }
+            
+            if (actualRowsToProcess > 100) {
+                const message = `You're about to process ${actualRowsToProcess} rows with content. Processing this many rows may take a while and could hit rate limits.\n\nAre you sure you want to continue?`;
+                if (!confirm(message)) {
+                    // Exit the entire function if user cancels
+                    throw new Error("User cancelled processing");
+                }
+            }
+        });
+    } catch (error) {
+        if (error.message === "User cancelled processing") {
+            return; // Exit silently if user cancelled
+        }
+        console.error("Error checking row count:", error);
+    }
+    
     // Generate a unique ID for this processing run
     const processingId = Date.now() + '_' + Math.random();
     currentProcessingId = processingId;

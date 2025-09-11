@@ -170,26 +170,23 @@
         <button type="submit" class="btn btn-primary" id="submitBtn">
           Run
         </button>
+        <!-- Cancel Button (hidden by default) -->
         <button
           type="button"
           class="btn btn-danger"
           id="cancelBtn"
-          style="display: none; margin-top: 16px"
-        >
-          Cancel Processing
-        </button>
-
-        <!-- Update Credentials Button (hidden by default) -->
-        <button
-          id="updateCredentialsBtn"
-          class="btn btn-secondary"
           style="display: none; margin-top: 16px; width: 100%"
         >
-          Update Credentials
+          Cancel
         </button>
       </form>
 
-      <div class="version">v0.1.2</div>
+      <!-- Update Credentials Button (bottom left, tiny) -->
+      <button id="updateCredentialsBtn" class="tiny-link" style="display: none">
+        Update Credentials
+      </button>
+
+      <div class="version">v0.1.4</div>
     </div>
 
     <!-- Custom Confirmation Modal -->

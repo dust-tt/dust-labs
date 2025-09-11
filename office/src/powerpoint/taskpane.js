@@ -93,7 +93,7 @@ function showCredentialSetup() {
 function showMainForm() {
   document.getElementById("credentialSetup").style.display = "none";
   document.getElementById("myForm").style.display = "block";
-  document.getElementById("updateCredentialsBtn").style.display = "block";
+  document.getElementById("updateCredentialsBtn").style.display = "inline-block";
 }
 
 // Show remove confirmation
@@ -400,34 +400,60 @@ async function processWithAssistant(assistantId, instructions, scope) {
       presentation.slides.load("items");
       await context.sync();
 
-      // Collect all text blocks from all slides
+      // Load all shapes from all slides at once
       for (let slide of presentation.slides.items) {
-        slide.shapes.load("items,type");
+        slide.shapes.load("items");
+      }
+      await context.sync();
+
+      // Load all textFrames at once
+      const shapesToCheck = [];
+      for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
+        const slide = presentation.slides.items[slideIndex];
+        for (let shape of slide.shapes.items) {
+          shapesToCheck.push({ shape, slide, slideIndex });
+          try {
+            shape.load("textFrame/hasText,type");
+          } catch (e) {
+            // Some shapes might not have textFrame
+          }
+        }
+      }
+      
+      if (shapesToCheck.length > 0) {
         await context.sync();
 
-        for (let shape of slide.shapes.items) {
+        // Load text content for shapes that have text
+        const shapesWithText = [];
+        for (let item of shapesToCheck) {
           try {
-            // Load textFrame and check if it has text
-            shape.load("textFrame/hasText,type");
-            await context.sync();
-            
-            if (shape.textFrame && shape.textFrame.hasText) {
-              shape.textFrame.load("textRange/text");
-              await context.sync();
-              
-              const text = shape.textFrame.textRange.text;
-              if (text && text.trim()) {
-                textBlocksToProcess.push({
-                  shape: shape,
-                  textRange: shape.textFrame.textRange,
-                  originalText: text,
-                  slideIndex: presentation.slides.items.indexOf(slide) + 1,
-                });
-              }
+            if (item.shape.textFrame && item.shape.textFrame.hasText) {
+              item.shape.textFrame.load("textRange/text");
+              shapesWithText.push(item);
             }
           } catch (e) {
             // Shape might not have a textFrame, continue
-            console.log("Shape without textFrame, skipping");
+          }
+        }
+
+        if (shapesWithText.length > 0) {
+          await context.sync();
+
+          // Collect text blocks
+          for (let item of shapesWithText) {
+            try {
+              const text = item.shape.textFrame.textRange.text;
+              if (text && text.trim()) {
+                textBlocksToProcess.push({
+                  shape: item.shape,
+                  textRange: item.shape.textFrame.textRange,
+                  originalText: text,
+                  slideIndex: item.slideIndex + 1,
+                });
+              }
+            } catch (e) {
+              console.log("Error getting text from shape:", e);
+            }
           }
         }
       }
@@ -482,34 +508,60 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
 
-      // Collect all text blocks from the selected slide(s)
+      // Load all shapes from target slides at once
       for (let slide of targetSlides) {
-        slide.shapes.load("items,type");
+        slide.shapes.load("items");
+      }
+      await context.sync();
+
+      // Load all textFrames at once
+      const shapesToCheck = [];
+      for (let slide of targetSlides) {
+        const slideIndex = targetSlides.indexOf(slide);
+        for (let shape of slide.shapes.items) {
+          shapesToCheck.push({ shape, slide, slideIndex });
+          try {
+            shape.load("textFrame/hasText,type");
+          } catch (e) {
+            // Some shapes might not have textFrame
+          }
+        }
+      }
+      
+      if (shapesToCheck.length > 0) {
         await context.sync();
 
-        for (let shape of slide.shapes.items) {
+        // Load text content for shapes that have text
+        const shapesWithText = [];
+        for (let item of shapesToCheck) {
           try {
-            // Load textFrame and check if it has text
-            shape.load("textFrame/hasText,type");
-            await context.sync();
-            
-            if (shape.textFrame && shape.textFrame.hasText) {
-              shape.textFrame.load("textRange/text");
-              await context.sync();
-              
-              const text = shape.textFrame.textRange.text;
-              if (text && text.trim()) {
-                textBlocksToProcess.push({
-                  shape: shape,
-                  textRange: shape.textFrame.textRange,
-                  originalText: text,
-                  slideIndex: targetSlides.indexOf(slide) + 1,
-                });
-              }
+            if (item.shape.textFrame && item.shape.textFrame.hasText) {
+              item.shape.textFrame.load("textRange/text");
+              shapesWithText.push(item);
             }
           } catch (e) {
             // Shape might not have a textFrame, continue
-            console.log("Shape without textFrame, skipping");
+          }
+        }
+
+        if (shapesWithText.length > 0) {
+          await context.sync();
+
+          // Collect text blocks
+          for (let item of shapesWithText) {
+            try {
+              const text = item.shape.textFrame.textRange.text;
+              if (text && text.trim()) {
+                textBlocksToProcess.push({
+                  shape: item.shape,
+                  textRange: item.shape.textFrame.textRange,
+                  originalText: text,
+                  slideIndex: item.slideIndex + 1,
+                });
+              }
+            } catch (e) {
+              console.log("Error getting text from shape:", e);
+            }
           }
         }
       }
@@ -564,6 +616,14 @@ async function processWithAssistant(assistantId, instructions, scope) {
     // Check if we have text blocks to process
     if (textBlocksToProcess.length === 0) {
       throw new Error("No text content found to process");
+    }
+
+    // Warn if processing more than 100 text blocks
+    if (textBlocksToProcess.length > 100) {
+      const message = `You're about to process ${textBlocksToProcess.length} text blocks. Processing this many blocks may take a while and could hit rate limits.\n\nAre you sure you want to continue?`;
+      if (!confirm(message)) {
+        throw new Error("Processing cancelled by user");
+      }
     }
 
     // Process text blocks in batches
