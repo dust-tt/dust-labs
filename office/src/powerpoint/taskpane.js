@@ -329,13 +329,15 @@ async function handleSubmit(e) {
         return;
       }
       
-      // Show confirmation dialog
-      const confirmed = await showConfirmationDialog(textBlockCount);
-      
-      if (!confirmed) {
-        document.getElementById("submitBtn").disabled = false;
-        document.getElementById("status").innerHTML = "";
-        return;
+      // Only show confirmation dialog if more than 100 text blocks
+      if (textBlockCount > 100) {
+        const confirmed = await showConfirmationDialog(textBlockCount);
+        
+        if (!confirmed) {
+          document.getElementById("submitBtn").disabled = false;
+          document.getElementById("status").innerHTML = "";
+          return;
+        }
       }
     } catch (error) {
       document.getElementById("submitBtn").disabled = false;
@@ -399,6 +401,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
       const presentation = context.presentation;
       presentation.slides.load("items");
       await context.sync();
+      
+      const totalSlides = presentation.slides.items.length;
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning ${totalSlides} slides...`;
 
       // Load all shapes from all slides at once
       for (let slide of presentation.slides.items) {
@@ -458,6 +463,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
     } else if (scope === "slide") {
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning current slide...`;
+      
       // Get the currently active slide
       let targetSlides = [];
 
@@ -566,6 +573,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
     } else if (scope === "selection") {
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning selected text...`;
+      
       // Handle selected shapes/text
       const selectedShapes = context.presentation.getSelectedShapes();
       selectedShapes.load("items");
@@ -782,9 +791,8 @@ function showConfirmationDialog(textBlockCount) {
     const confirmBtn = document.getElementById("confirmProcessBtn");
     const cancelBtn = document.getElementById("cancelProcessBtn");
     
-    // Set message
-    const blockText = textBlockCount === 1 ? "text block" : "text blocks";
-    message.textContent = `This will process ${textBlockCount} ${blockText} across the entire presentation. Each text block will be sent to the selected agent for processing. Do you want to continue?`;
+    // Set message for >100 text blocks warning
+    message.textContent = `You're about to process ${textBlockCount} text blocks. Processing this many blocks may take a while and could hit rate limits.\n\nAre you sure you want to continue?`;
     
     // Show modal
     modal.style.display = "flex";
