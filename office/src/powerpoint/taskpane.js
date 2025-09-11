@@ -391,6 +391,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
     throw new Error("Please configure your Dust credentials first");
   }
 
+  let processedResults = [];
+  
   await PowerPoint.run(async (context) => {
     let textBlocksToProcess = [];
     // Store only metadata, not PowerPoint objects
@@ -424,7 +426,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
         for (let shape of slide.shapes.items) {
-          shapesToCheck.push({ shape, slide, slideIndex });
+          shapesToCheck.push({ shape, slideIndex });
+          shape.load("id");
           try {
             shape.load("textFrame/hasText,type");
           } catch (e) {
@@ -509,24 +512,20 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       // Load all textFrames at once
       const shapesToCheck = [];
-      // We need to find the actual slide index in the presentation
-      const presentation = context.presentation;
-      if (!presentation.slides.items) {
-        presentation.slides.load("items");
-        await context.sync();
-      }
       
+      // For slide scope, collect shapes from target slides
+      let slideIdx = 0;
       for (let slide of targetSlides) {
-        // Find the actual index of this slide in the presentation
-        const slideIndex = presentation.slides.items.indexOf(slide);
         for (let shape of slide.shapes.items) {
-          shapesToCheck.push({ shape, slide, slideIndex: slideIndex >= 0 ? slideIndex : 0 });
+          shapesToCheck.push({ shape, slideIndex: slideIdx });
+          shape.load("id");
           try {
             shape.load("textFrame/hasText,type");
           } catch (e) {
             // Some shapes might not have textFrame
           }
         }
+        slideIdx++;
       }
       
       if (shapesToCheck.length > 0) {
@@ -554,10 +553,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
               const text = item.shape.textFrame.textRange.text;
               if (text && text.trim()) {
                 // Store metadata to identify text blocks later
+                // For slide scope, slideIndex is relative to targetSlides, not all slides
                 textBlocksToProcess.push({
-                  slideIndex: item.slideIndex >= 0 ? item.slideIndex : 0,
+                  slideIndex: item.slideIndex,
                   shapeId: item.shape.id,
-                  originalText: text
+                  originalText: text,
+                  isSlideScope: true
                 });
               }
             } catch (e) {
@@ -646,7 +647,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
     // First, process all text blocks with the API and collect results
     const totalBlocks = textBlocksToProcess.length;
     let processedCount = 0;
-    const processedResults = [];
 
     document.getElementById(
       "status"
@@ -737,11 +737,16 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
     }
     
-    // Now apply all the results back to PowerPoint
-    if (processedResults.length > 0) {
-      document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
-      
-      // Load all slides and shapes
+    // Clear the text blocks list to free memory
+    textBlocksToProcess = null;
+  });
+  
+  // Now apply all the results back to PowerPoint in a NEW context
+  if (processedResults.length > 0) {
+    document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
+    
+    await PowerPoint.run(async (context) => {
+      // Load all slides and shapes fresh
       const presentation = context.presentation;
       presentation.slides.load("items");
       await context.sync();
@@ -763,29 +768,48 @@ async function processWithAssistant(assistantId, instructions, scope) {
           
           let shapeFound = false;
           
-          if (result.slideIndex !== null && result.slideIndex >= 0) {
-            // Find shape by slide index and shape ID
-            const slide = presentation.slides.items[result.slideIndex];
-            if (slide) {
-              for (let shape of slide.shapes.items) {
-                if (shape.id === result.shapeId && shape.textFrame) {
-                  shape.textFrame.textRange.text = result.newText;
-                  shapeFound = true;
-                  break;
+          // Shape IDs should be unique across the presentation
+          // So we can always search by shape ID regardless of scope
+          if (result.shapeId) {
+            // For slide scope and selection, or when we don't have reliable slideIndex
+            if (result.isSlideScope || result.isSelection || result.slideIndex === null) {
+              // Find shape by ID across all slides
+              for (let slide of presentation.slides.items) {
+                for (let shape of slide.shapes.items) {
+                  if (shape.id === result.shapeId && shape.textFrame) {
+                    shape.textFrame.textRange.text = result.newText;
+                    shapeFound = true;
+                    break;
+                  }
+                }
+                if (shapeFound) break;
+              }
+            } else if (result.slideIndex >= 0 && result.slideIndex < presentation.slides.items.length) {
+              // For presentation scope with valid slide index, optimize by checking specific slide first
+              const slide = presentation.slides.items[result.slideIndex];
+              if (slide) {
+                for (let shape of slide.shapes.items) {
+                  if (shape.id === result.shapeId && shape.textFrame) {
+                    shape.textFrame.textRange.text = result.newText;
+                    shapeFound = true;
+                    break;
+                  }
                 }
               }
-            }
-          } else if (result.shapeId) {
-            // Find shape by ID across all slides (for selections)
-            for (let slide of presentation.slides.items) {
-              for (let shape of slide.shapes.items) {
-                if (shape.id === result.shapeId && shape.textFrame) {
-                  shape.textFrame.textRange.text = result.newText;
-                  shapeFound = true;
-                  break;
+              
+              // If not found in expected slide, search all slides (fallback)
+              if (!shapeFound) {
+                for (let slide of presentation.slides.items) {
+                  for (let shape of slide.shapes.items) {
+                    if (shape.id === result.shapeId && shape.textFrame) {
+                      shape.textFrame.textRange.text = result.newText;
+                      shapeFound = true;
+                      break;
+                    }
+                  }
+                  if (shapeFound) break;
                 }
               }
-              if (shapeFound) break;
             }
           }
           
@@ -799,8 +823,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
       
       await context.sync();
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Presentation updated successfully`;
-    }
-  });
+    });
+  }
 }
 
 function updateProgressDisplay() {
