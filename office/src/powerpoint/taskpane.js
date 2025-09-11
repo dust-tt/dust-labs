@@ -317,8 +317,6 @@ async function handleSubmit(e) {
   // If processing entire presentation, count text blocks first
   if (scope === "presentation") {
     document.getElementById("submitBtn").disabled = true;
-    document.getElementById("status").innerHTML =
-      '<div class="spinner"></div> Counting text blocks...';
     
     try {
       const textBlockCount = await countPresentationTextBlocks();
@@ -395,6 +393,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
   await PowerPoint.run(async (context) => {
     let textBlocksToProcess = [];
+    // Store only metadata, not PowerPoint objects
+    // Structure: { slideIndex, shapeIndex, originalText }
 
     if (scope === "presentation") {
       // Get all slides in the presentation
@@ -405,9 +405,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
       const totalSlides = presentation.slides.items.length;
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
 
-      // Load all shapes from all slides at once
+      // Load all shapes from all slides at once (including their IDs)
       for (let slide of presentation.slides.items) {
-        slide.shapes.load("items");
+        slide.shapes.load("items/id");
       }
       await context.sync();
       
@@ -458,11 +458,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
             try {
               const text = item.shape.textFrame.textRange.text;
               if (text && text.trim()) {
+                // Store metadata to identify text blocks later
                 textBlocksToProcess.push({
-                  shape: item.shape,
-                  textRange: item.shape.textFrame.textRange,
-                  originalText: text,
-                  slideIndex: item.slideIndex + 1,
+                  slideIndex: item.slideIndex,
+                  shapeId: item.shape.id,
+                  originalText: text
                 });
               }
             } catch (e) {
@@ -501,9 +501,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
 
-      // Load all shapes from target slides at once
+      // Load all shapes from target slides at once (including their IDs)
       for (let slide of targetSlides) {
-        slide.shapes.load("items");
+        slide.shapes.load("items/id");
       }
       await context.sync();
 
@@ -553,11 +553,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
             try {
               const text = item.shape.textFrame.textRange.text;
               if (text && text.trim()) {
+                // Store metadata to identify text blocks later
                 textBlocksToProcess.push({
-                  shape: item.shape,
-                  textRange: item.shape.textFrame.textRange,
-                  originalText: text,
-                  slideIndex: item.slideIndex + 1,
+                  slideIndex: item.slideIndex >= 0 ? item.slideIndex : 0,
+                  shapeId: item.shape.id,
+                  originalText: text
                 });
               }
             } catch (e) {
@@ -575,28 +575,41 @@ async function processWithAssistant(assistantId, instructions, scope) {
       await context.sync();
 
       if (selectedShapes.items.length > 0) {
-        // Process each selected shape
+        // Load shape IDs and text frames
+        for (let shape of selectedShapes.items) {
+          shape.load("id,textFrame/hasText");
+        }
+        await context.sync();
+        
+        // Load text for shapes that have it
         for (let shape of selectedShapes.items) {
           try {
-            shape.load("textFrame/hasText");
-            await context.sync();
-            
             if (shape.textFrame && shape.textFrame.hasText) {
               shape.textFrame.load("textRange/text");
-              await context.sync();
-              
+            }
+          } catch (e) {
+            // Shape might not have a textFrame
+          }
+        }
+        await context.sync();
+        
+        // Collect text blocks
+        for (let shape of selectedShapes.items) {
+          try {
+            if (shape.textFrame && shape.textFrame.hasText) {
               const text = shape.textFrame.textRange.text;
               if (text && text.trim()) {
+                // For selected shapes, store shape ID
                 textBlocksToProcess.push({
-                  shape: shape,
-                  textRange: shape.textFrame.textRange,
-                  originalText: text,
                   slideIndex: null,
+                  shapeId: shape.id,
+                  originalText: text,
+                  isSelection: true
                 });
               }
             }
           } catch (e) {
-            console.log("Selected shape without textFrame, skipping");
+            console.log("Error processing shape:", e);
           }
         }
       } else {
@@ -606,11 +619,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
         await context.sync();
 
         if (selectedTextRange.text && selectedTextRange.text.trim()) {
+          // For selected text, we can't update it later, so just note it
           textBlocksToProcess.push({
-            shape: null,
-            textRange: selectedTextRange,
-            originalText: selectedTextRange.text,
             slideIndex: null,
+            shapeId: null,
+            originalText: selectedTextRange.text,
+            isSelectedText: true
           });
         }
       }
@@ -629,9 +643,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
     }
 
-    // Process text blocks in batches
+    // First, process all text blocks with the API and collect results
     const totalBlocks = textBlocksToProcess.length;
     let processedCount = 0;
+    const processedResults = [];
 
     document.getElementById(
       "status"
@@ -699,9 +714,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
             .find((msg) => msg.type === "agent_message");
 
           if (lastAgentMessage && lastAgentMessage.content) {
-            // Replace the text in the text block
-            textBlock.textRange.text = lastAgentMessage.content;
-            await context.sync();
+            // Store the result to apply later
+            processedResults.push({
+              ...textBlock,
+              newText: lastAgentMessage.content
+            });
           }
 
           processedCount++;
@@ -719,6 +736,70 @@ async function processWithAssistant(assistantId, instructions, scope) {
         await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
       }
     }
+    
+    // Now apply all the results back to PowerPoint
+    if (processedResults.length > 0) {
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
+      
+      // Load all slides and shapes
+      const presentation = context.presentation;
+      presentation.slides.load("items");
+      await context.sync();
+      
+      // Load all shapes for all slides with their IDs
+      for (let slide of presentation.slides.items) {
+        slide.shapes.load("items/id,textFrame");
+      }
+      await context.sync();
+      
+      // Apply the updates
+      for (let result of processedResults) {
+        try {
+          if (result.isSelectedText) {
+            // Can't update selected text automatically
+            console.log("Selected text can't be updated automatically");
+            continue;
+          }
+          
+          let shapeFound = false;
+          
+          if (result.slideIndex !== null && result.slideIndex >= 0) {
+            // Find shape by slide index and shape ID
+            const slide = presentation.slides.items[result.slideIndex];
+            if (slide) {
+              for (let shape of slide.shapes.items) {
+                if (shape.id === result.shapeId && shape.textFrame) {
+                  shape.textFrame.textRange.text = result.newText;
+                  shapeFound = true;
+                  break;
+                }
+              }
+            }
+          } else if (result.shapeId) {
+            // Find shape by ID across all slides (for selections)
+            for (let slide of presentation.slides.items) {
+              for (let shape of slide.shapes.items) {
+                if (shape.id === result.shapeId && shape.textFrame) {
+                  shape.textFrame.textRange.text = result.newText;
+                  shapeFound = true;
+                  break;
+                }
+              }
+              if (shapeFound) break;
+            }
+          }
+          
+          if (!shapeFound) {
+            console.log("Could not find shape to update:", result.shapeId);
+          }
+        } catch (e) {
+          console.error("Error updating text block:", e);
+        }
+      }
+      
+      await context.sync();
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Presentation updated successfully`;
+    }
   });
 }
 
@@ -729,8 +810,11 @@ function updateProgressDisplay() {
   }
 }
 
-// Count text blocks in presentation
+// Count text blocks in presentation with progress updates
 async function countPresentationTextBlocks() {
+  // Update status before entering PowerPoint.run
+  document.getElementById("status").innerHTML = '<div class="spinner"></div> Loading presentation...';
+  
   return await PowerPoint.run(async (context) => {
     let textBlockCount = 0;
     
@@ -739,40 +823,72 @@ async function countPresentationTextBlocks() {
     presentation.slides.load("items");
     await context.sync();
     
-    console.log(`Found ${presentation.slides.items.length} slides`);
+    const totalSlides = presentation.slides.items.length;
+    document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
     
-    // Count text blocks from all slides
+    // Load all shapes from all slides at once (batched for performance)
+    for (let slide of presentation.slides.items) {
+      slide.shapes.load("items");
+    }
+    await context.sync();
+    
+    // Count total shapes
+    let totalShapes = 0;
+    for (let slide of presentation.slides.items) {
+      totalShapes += slide.shapes.items.length;
+    }
+    
+    document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
+    
+    // Load all textFrames at once
+    const shapesToCheck = [];
     for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
       const slide = presentation.slides.items[slideIndex];
-      slide.shapes.load("items,type");
-      await context.sync();
-      
-      console.log(`Slide ${slideIndex + 1} has ${slide.shapes.items.length} shapes`);
-      
       for (let shape of slide.shapes.items) {
+        shapesToCheck.push({ shape, slideIndex });
         try {
-          // Load textFrame and check if it has text
-          shape.load("textFrame/hasText,type");
-          await context.sync();
-          
-          if (shape.textFrame && shape.textFrame.hasText) {
-            shape.textFrame.load("textRange/text");
-            await context.sync();
-            
-            const text = shape.textFrame.textRange.text;
-            if (text && text.trim()) {
-              console.log(`Found text block: "${text.substring(0, 50)}..."`);
-              textBlockCount++;
-            }
-          }
+          shape.load("textFrame/hasText");
         } catch (e) {
-          // Shape might not have a textFrame, continue
-          console.log("Shape without textFrame, skipping:", e.message);
+          // Some shapes might not have textFrame
         }
       }
     }
     
-    console.log(`Total text blocks found: ${textBlockCount}`);
+    if (shapesToCheck.length > 0) {
+      await context.sync();
+      
+      // Load text content for shapes that have text
+      const shapesWithText = [];
+      for (let item of shapesToCheck) {
+        try {
+          if (item.shape.textFrame && item.shape.textFrame.hasText) {
+            item.shape.textFrame.load("textRange/text");
+            shapesWithText.push(item);
+          }
+        } catch (e) {
+          // Shape might not have a textFrame
+        }
+      }
+      
+      if (shapesWithText.length > 0) {
+        document.getElementById("status").innerHTML = `<div class="spinner"></div> Reading text from ${shapesWithText.length} shapes...`;
+        await context.sync();
+        
+        // Count text blocks
+        for (let item of shapesWithText) {
+          try {
+            const text = item.shape.textFrame.textRange.text;
+            if (text && text.trim()) {
+              textBlockCount++;
+            }
+          } catch (e) {
+            console.log("Error getting text:", e);
+          }
+        }
+      }
+    }
+    
+    document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${textBlockCount} text blocks`;
     return textBlockCount;
   });
 }
