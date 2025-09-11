@@ -584,8 +584,7 @@ async function handleSubmit(e) {
 }
 
 async function processWithAssistant(assistantId, instructions, scope) {
-  const BATCH_SIZE = 5; // Process 5 text blocks at a time
-  const BATCH_DELAY = 2000; // 2 second delay between batches
+  const MAX_CONCURRENT = 10; // Process up to 10 text blocks concurrently
 
   const token = getFromStorage("dustToken");
   const workspaceId = getFromStorage("workspaceId");
@@ -595,6 +594,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
   }
 
   let processedResults = [];
+  let finalProcessedCount = 0;
+  let finalUpdatedCount = 0;
   
   console.log(`[ProcessWithAssistant] Starting processing with scope: ${scope}`);
   
@@ -838,115 +839,207 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
     }
 
-    // First, process all text blocks with the API and collect results
+    // Process all text blocks in parallel with concurrency limit
     const totalBlocks = textBlocksToProcess.length;
     let processedCount = 0;
+    let updatedCount = 0;
 
     document.getElementById(
       "status"
     ).innerHTML = `<div class="spinner"></div> Processing ${totalBlocks} text block(s)...`;
 
-    // Process in batches to avoid rate limiting
-    for (let i = 0; i < textBlocksToProcess.length; i += BATCH_SIZE) {
+    // Create a function to process a single text block and update immediately
+    const processAndUpdateTextBlock = async (textBlock) => {
       // Check if processing was cancelled
       if (processingCancelled) {
-        document.getElementById("status").innerHTML = "Processing cancelled";
-        return; // Exit the entire function immediately
+        return null;
       }
-      
-      const batch = textBlocksToProcess.slice(
-        i,
-        Math.min(i + BATCH_SIZE, textBlocksToProcess.length)
-      );
 
-      // Process each text block in the batch
-      for (let textBlock of batch) {
-        // Check cancellation for each item
+      try {
+        // Prepare the content for the API
+        const inputContent =
+          (instructions || "Process this text:") +
+          "\n\n" +
+          textBlock.originalText;
+
+        // Call Dust API for this text block
+        const payload = {
+          message: {
+            content: inputContent,
+            mentions: [{ configurationId: assistantId }],
+            context: {
+              username: "powerpoint",
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              fullName: "PowerPoint User",
+              email: "powerpoint@dust.tt",
+              profilePictureUrl: "",
+              origin: "powerpoint",
+            },
+          },
+          blocking: true,
+          title: "PowerPoint Conversation",
+          visibility: "unlisted",
+          skipToolsValidation: true,
+        };
+
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+        const result = await callDustAPI(apiPath, {
+          method: "POST",
+          body: payload,
+          headers: {
+            Authorization: "Bearer " + token,
+          },
+        });
+
+        // Check if cancelled after API call
         if (processingCancelled) {
-          // Clean up and exit immediately
-          document.getElementById("status").innerHTML = "Processing cancelled";
-          return; // Exit the entire function
+          return null;
         }
         
-        try {
-          // Double-check cancellation before making API call
-          if (processingCancelled) {
-            console.log("Processing cancelled before API call");
-            document.getElementById("status").innerHTML = "Processing cancelled";
-            return;
-          }
+        const messages = result.conversation.content;
+        const lastAgentMessage = messages
+          .flat()
+          .reverse()
+          .find((msg) => msg.type === "agent_message");
+
+        if (lastAgentMessage && lastAgentMessage.content) {
+          processedCount++;
           
-          // Prepare the content for the API
-          const inputContent =
-            (instructions || "Process this text:") +
-            "\n\n" +
-            textBlock.originalText;
-
-          // Call Dust API for this text block
-          const payload = {
-            message: {
-              content: inputContent,
-              mentions: [{ configurationId: assistantId }],
-              context: {
-                username: "powerpoint",
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                fullName: "PowerPoint User",
-                email: "powerpoint@dust.tt",
-                profilePictureUrl: "",
-                origin: "powerpoint",
-              },
-            },
-            blocking: true,
-            title: "PowerPoint Conversation",
-            visibility: "unlisted",
-            skipToolsValidation: true,
-          };
-
-          const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
-          const result = await callDustAPI(apiPath, {
-            method: "POST",
-            body: payload,
-            headers: {
-              Authorization: "Bearer " + token,
-            },
-          });
-
-          // Check if cancelled after API call
-          if (processingCancelled) {
-            console.log("Processing cancelled after API call");
-            document.getElementById("status").innerHTML = "Processing cancelled";
-            return;
-          }
-          
-          const messages = result.conversation.content;
-          const lastAgentMessage = messages
-            .flat()
-            .reverse()
-            .find((msg) => msg.type === "agent_message");
-
-          if (lastAgentMessage && lastAgentMessage.content) {
-            // Store the result to apply later
-            processedResults.push({
-              ...textBlock,
-              newText: lastAgentMessage.content
+          // Immediately update the shape in PowerPoint
+          if (!textBlock.isSelectedText) {
+            await PowerPoint.run(async (updateContext) => {
+              try {
+                // Get the specific slide
+                const presentation = updateContext.presentation;
+                presentation.slides.load("items");
+                await updateContext.sync();
+                
+                // For selections or slide scope, we need to find the shape differently
+                if (textBlock.isSelection || textBlock.isSlideScope) {
+                  // Load all shapes to find by ID
+                  for (let slide of presentation.slides.items) {
+                    slide.shapes.load("items/id");
+                  }
+                  await updateContext.sync();
+                  
+                  // Find the shape by ID
+                  let targetShape = null;
+                  for (let slide of presentation.slides.items) {
+                    for (let shape of slide.shapes.items) {
+                      if (shape.id === textBlock.shapeId) {
+                        targetShape = shape;
+                        break;
+                      }
+                    }
+                    if (targetShape) break;
+                  }
+                  
+                  if (targetShape) {
+                    targetShape.load("textFrame");
+                    await updateContext.sync();
+                    
+                    if (targetShape.textFrame) {
+                      targetShape.textFrame.load("textRange");
+                      await updateContext.sync();
+                      
+                      if (targetShape.textFrame.textRange) {
+                        targetShape.textFrame.textRange.text = lastAgentMessage.content.trim();
+                        await updateContext.sync();
+                        updatedCount++;
+                        console.log(`[ProcessWithAssistant] Updated shape ${textBlock.shapeId} immediately`);
+                      }
+                    }
+                  }
+                } else if (textBlock.slideIndex !== null && textBlock.slideIndex !== undefined) {
+                  // Regular presentation or slide processing
+                  const targetSlide = presentation.slides.items[textBlock.slideIndex];
+                  if (targetSlide) {
+                    targetSlide.shapes.load("items/id");
+                    await updateContext.sync();
+                    
+                    // Find the shape by ID
+                    let targetShape = null;
+                    for (let shape of targetSlide.shapes.items) {
+                      if (shape.id === textBlock.shapeId) {
+                        targetShape = shape;
+                        break;
+                      }
+                    }
+                    
+                    if (targetShape) {
+                      targetShape.load("textFrame");
+                      await updateContext.sync();
+                      
+                      if (targetShape.textFrame) {
+                        targetShape.textFrame.load("textRange");
+                        await updateContext.sync();
+                        
+                        if (targetShape.textFrame.textRange) {
+                          targetShape.textFrame.textRange.text = lastAgentMessage.content.trim();
+                          await updateContext.sync();
+                          updatedCount++;
+                          console.log(`[ProcessWithAssistant] Updated shape ${textBlock.shapeId} immediately`);
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                // Update status
+                document.getElementById(
+                  "status"
+                ).innerHTML = `<div class="spinner"></div> Processing (${processedCount}/${totalBlocks}) - Updated ${updatedCount}...`;
+              } catch (updateError) {
+                console.error(`Error updating shape ${textBlock.shapeId}:`, updateError.message);
+              }
             });
           }
+          
+          return {
+            ...textBlock,
+            newText: lastAgentMessage.content
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error(`Error processing text block: ${error.message}`);
+        return null;
+      }
+    };
 
-          processedCount++;
-          document.getElementById(
-            "status"
-          ).innerHTML = `<div class="spinner"></div> Processing (${processedCount}/${totalBlocks})...`;
-        } catch (error) {
-          console.error(`Error processing text block: ${error.message}`);
-          // Continue processing other blocks even if one fails
+    // Process text blocks with concurrency limit
+    const processingPromises = [];
+    for (let i = 0; i < textBlocksToProcess.length; i++) {
+      // Check if cancelled before starting new processing
+      if (processingCancelled) {
+        document.getElementById("status").innerHTML = "Processing cancelled";
+        return;
+      }
+
+      // Add to processing queue
+      processingPromises.push(processAndUpdateTextBlock(textBlocksToProcess[i]));
+
+      // If we've reached the concurrency limit, wait for some to complete
+      if (processingPromises.length >= MAX_CONCURRENT) {
+        // Wait for at least one to complete before continuing
+        await Promise.race(processingPromises.filter(p => p !== null));
+        
+        // Clean up completed promises
+        for (let j = processingPromises.length - 1; j >= 0; j--) {
+          if (processingPromises[j] && await Promise.race([processingPromises[j], Promise.resolve('pending')]) !== 'pending') {
+            processingPromises.splice(j, 1);
+          }
         }
       }
-
-      // Add delay between batches if not the last batch
-      if (i + BATCH_SIZE < textBlocksToProcess.length) {
-        await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
-      }
     }
+
+    // Wait for all remaining promises to complete
+    const results = await Promise.all(processingPromises);
+    processedResults = results.filter(r => r !== null);
+    
+    // Store final counts
+    finalProcessedCount = processedCount;
+    finalUpdatedCount = updatedCount;
     
       // Clear the text blocks list to free memory
       textBlocksToProcess = null;
@@ -969,139 +1062,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
     throw contextError;
   }
   
-  // Now apply all the results back to PowerPoint in a NEW context
-  // But ONLY if not cancelled
-  if (processedResults.length > 0 && !processingCancelled) {
-    console.log(`[ProcessWithAssistant] Applying ${processedResults.length} processed results`);
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
-    
-    await PowerPoint.run(async (context) => {
-      console.log('[ProcessWithAssistant] Starting new PowerPoint context for updates');
-      // Load all slides and shapes fresh
-      const presentation = context.presentation;
-      presentation.slides.load("items");
-      await context.sync();
-      console.log(`[ProcessWithAssistant] Loaded ${presentation.slides.items.length} slides for update`);
-      
-      // Load all shapes for all slides with their IDs and types
-      for (let slide of presentation.slides.items) {
-        slide.shapes.load("items/id,items/type");
-      }
-      await context.sync();
-      console.log('[ProcessWithAssistant] Loaded all shape IDs and types');
-      
-      // Build a map of shapes for quick lookup during update
-      const shapeMap = new Map();
-      for (let slide of presentation.slides.items) {
-        for (let shape of slide.shapes.items) {
-          shapeMap.set(shape.id, shape);
-        }
-      }
-      console.log(`[ProcessWithAssistant] Created shape map with ${shapeMap.size} shapes`);
-      
-      // Apply the updates
-      let updatedCount = 0;
-      let failedCount = 0;
-      
-      for (let result of processedResults) {
-        try {
-          console.log(`[ProcessWithAssistant] Updating shape ${result.shapeId}`);
-          
-          if (result.isSelectedText) {
-            // Can't update selected text automatically
-            console.log("[ProcessWithAssistant] Selected text can't be updated automatically");
-            continue;
-          }
-          
-          let shapeUpdated = false;
-          
-          // Use the shape map to find the shape
-          if (result.shapeId && shapeMap.has(result.shapeId)) {
-            const shape = shapeMap.get(result.shapeId);
-            const shapeType = shape.type;
-            
-            // Check if this shape type can have text
-            if (shapeType === "GeometricShape" || 
-                shapeType === "TextBox" || 
-                shapeType === "Placeholder" ||
-                shapeType === "Group" ||
-                !shapeType) {
-              
-              // Try to load and update the textFrame
-              // We need to do this carefully with individual error handling
-              try {
-                // First try to load just the textFrame to see if it exists
-                shape.load("textFrame");
-                await context.sync();
-                
-                if (shape.textFrame) {
-                  // Now try to load the hasText property
-                  try {
-                    shape.textFrame.load("hasText");
-                    await context.sync();
-                    
-                    if (shape.textFrame.hasText) {
-                      // Finally, load and update the text range
-                      try {
-                        shape.textFrame.load("textRange");
-                        await context.sync();
-                        
-                        if (shape.textFrame.textRange) {
-                          // Trim the new text before setting it
-                          shape.textFrame.textRange.text = result.newText.trim();
-                          await context.sync();
-                          shapeUpdated = true;
-                          console.log(`[ProcessWithAssistant] Successfully updated shape ${result.shapeId}`);
-                        }
-                      } catch (e) {
-                        console.log(`[ProcessWithAssistant] Could not access textRange for shape ${result.shapeId}: ${e.message}`);
-                      }
-                    } else {
-                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no text`);
-                    }
-                  } catch (e) {
-                    console.log(`[ProcessWithAssistant] Could not check hasText for shape ${result.shapeId}: ${e.message}`);
-                  }
-                } else {
-                  console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame`);
-                }
-              } catch (e) {
-                console.log(`[ProcessWithAssistant] Shape ${result.shapeId} does not support textFrame: ${e.message}`);
-              }
-            } else {
-              console.log(`[ProcessWithAssistant] Shape ${result.shapeId} of type ${shapeType} cannot have text`);
-            }
-          } else {
-            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not found in shape map`);
-          }
-          
-          if (shapeUpdated) {
-            updatedCount++;
-          } else {
-            failedCount++;
-          }
-        } catch (e) {
-          console.error(`[ProcessWithAssistant] Error updating text block:`, e.message);
-          failedCount++;
-        }
-      }
-      
-      console.log(`[ProcessWithAssistant] Update complete. Updated: ${updatedCount}, Failed: ${failedCount}`);
-      
-      // Final sync is not needed since we've been syncing after each update
-      console.log('[ProcessWithAssistant] All updates completed');
-      
-      // Show appropriate status message
-      if (updatedCount > 0 && failedCount === 0) {
-        document.getElementById("status").innerHTML = `✅ Successfully updated ${updatedCount} text block(s)`;
-      } else if (updatedCount > 0 && failedCount > 0) {
-        document.getElementById("status").innerHTML = `⚠️ Updated ${updatedCount} text block(s), ${failedCount} failed`;
-      } else {
-        document.getElementById("status").innerHTML = `❌ Failed to update text blocks`;
-      }
-    });
+  // Since we've already updated shapes immediately after processing,
+  // we just need to show the final status
+  if (!processingCancelled) {
+    if (finalUpdatedCount > 0) {
+      document.getElementById("status").innerHTML = `✅ Successfully updated ${finalUpdatedCount} text block(s)`;
+    } else if (finalProcessedCount > 0) {
+      document.getElementById("status").innerHTML = `✅ Processed ${finalProcessedCount} text block(s)`;
+    } else {
+      document.getElementById("status").innerHTML = `❌ No text blocks were processed`;
+    }
   } else {
-    console.log('[ProcessWithAssistant] No results to apply');
+    console.log('[ProcessWithAssistant] Processing was cancelled');
   }
   
   console.log('[ProcessWithAssistant] Process completed successfully');
