@@ -816,25 +816,39 @@ async function processWithAssistant(assistantId, instructions, scope) {
       await context.sync();
       console.log(`[ProcessWithAssistant] Loaded ${presentation.slides.items.length} slides for update`);
       
-      // Load all shapes for all slides with their IDs and textFrames separately
+      // Load all shapes for all slides with their IDs and types
       for (let slide of presentation.slides.items) {
-        slide.shapes.load("items/id");
+        slide.shapes.load("items/id,items/type");
       }
       await context.sync();
-      console.log('[ProcessWithAssistant] Loaded all shape IDs');
+      console.log('[ProcessWithAssistant] Loaded all shape IDs and types');
       
-      // Now load textFrame properties for all shapes
+      // Now load textFrame properties ONLY for text-capable shapes
+      const textCapableShapes = [];
       for (let slide of presentation.slides.items) {
         for (let shape of slide.shapes.items) {
-          try {
-            shape.load("textFrame");
-          } catch (e) {
-            // Some shapes don't have textFrame
+          const shapeType = shape.type;
+          // Only try to load textFrame for shapes that can have text
+          if (shapeType === "GeometricShape" || 
+              shapeType === "TextBox" || 
+              shapeType === "Placeholder" ||
+              shapeType === "Group" ||
+              !shapeType) {
+            try {
+              shape.load("textFrame/hasText,textFrame/textRange");
+              textCapableShapes.push(shape);
+            } catch (e) {
+              // Shape doesn't have textFrame
+              console.log(`Shape ${shape.id} of type ${shapeType} doesn't have textFrame`);
+            }
           }
         }
       }
-      await context.sync();
-      console.log('[ProcessWithAssistant] Loaded all textFrames for update');
+      
+      if (textCapableShapes.length > 0) {
+        await context.sync();
+        console.log(`[ProcessWithAssistant] Loaded textFrames for ${textCapableShapes.length} text-capable shapes`);
+      }
       
       // Apply the updates
       let updatedCount = 0;
@@ -861,12 +875,27 @@ async function processWithAssistant(assistantId, instructions, scope) {
               for (let slide of presentation.slides.items) {
                 for (let shape of slide.shapes.items) {
                   if (shape.id === result.shapeId) {
-                    if (shape.textFrame && shape.textFrame.textRange) {
-                      shape.textFrame.textRange.text = result.newText;
-                      shapeFound = true;
-                      console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide scope`);
+                    // Check if this shape is text-capable before trying to access textFrame
+                    const shapeType = shape.type;
+                    if (shapeType === "GeometricShape" || 
+                        shapeType === "TextBox" || 
+                        shapeType === "Placeholder" ||
+                        shapeType === "Group" ||
+                        !shapeType) {
+                      try {
+                        if (shape.textFrame && shape.textFrame.hasText && shape.textFrame.textRange) {
+                          // Trim the new text before setting it
+                          shape.textFrame.textRange.text = result.newText.trim();
+                          shapeFound = true;
+                          console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide scope`);
+                        } else {
+                          console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no text content`);
+                        }
+                      } catch (e) {
+                        console.log(`[ProcessWithAssistant] Error accessing textFrame for shape ${result.shapeId}: ${e.message}`);
+                      }
                     } else {
-                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame or textRange`);
+                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} of type ${shapeType} cannot have text`);
                     }
                     break;
                   }
@@ -879,12 +908,27 @@ async function processWithAssistant(assistantId, instructions, scope) {
               if (slide) {
                 for (let shape of slide.shapes.items) {
                   if (shape.id === result.shapeId) {
-                    if (shape.textFrame && shape.textFrame.textRange) {
-                      shape.textFrame.textRange.text = result.newText;
-                      shapeFound = true;
-                      console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide scope`);
+                    // Check if this shape is text-capable before trying to access textFrame
+                    const shapeType = shape.type;
+                    if (shapeType === "GeometricShape" || 
+                        shapeType === "TextBox" || 
+                        shapeType === "Placeholder" ||
+                        shapeType === "Group" ||
+                        !shapeType) {
+                      try {
+                        if (shape.textFrame && shape.textFrame.hasText && shape.textFrame.textRange) {
+                          // Trim the new text before setting it
+                          shape.textFrame.textRange.text = result.newText.trim();
+                          shapeFound = true;
+                          console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide ${result.slideIndex}`);
+                        } else {
+                          console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no text content`);
+                        }
+                      } catch (e) {
+                        console.log(`[ProcessWithAssistant] Error accessing textFrame for shape ${result.shapeId}: ${e.message}`);
+                      }
                     } else {
-                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame or textRange`);
+                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} of type ${shapeType} cannot have text`);
                     }
                     break;
                   }
@@ -895,9 +939,23 @@ async function processWithAssistant(assistantId, instructions, scope) {
               if (!shapeFound) {
                 for (let slide of presentation.slides.items) {
                   for (let shape of slide.shapes.items) {
-                    if (shape.id === result.shapeId && shape.textFrame) {
-                      shape.textFrame.textRange.text = result.newText;
-                      shapeFound = true;
+                    if (shape.id === result.shapeId) {
+                      const shapeType = shape.type;
+                      if (shapeType === "GeometricShape" || 
+                          shapeType === "TextBox" || 
+                          shapeType === "Placeholder" ||
+                          shapeType === "Group" ||
+                          !shapeType) {
+                        try {
+                          if (shape.textFrame && shape.textFrame.hasText && shape.textFrame.textRange) {
+                            shape.textFrame.textRange.text = result.newText.trim();
+                            shapeFound = true;
+                            console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} (fallback search)`);
+                          }
+                        } catch (e) {
+                          // Silent fail for fallback
+                        }
+                      }
                       break;
                     }
                   }
