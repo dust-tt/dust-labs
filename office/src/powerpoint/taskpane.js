@@ -403,13 +403,21 @@ async function processWithAssistant(assistantId, instructions, scope) {
       await context.sync();
       
       const totalSlides = presentation.slides.items.length;
-      document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning ${totalSlides} slides...`;
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
 
       // Load all shapes from all slides at once
       for (let slide of presentation.slides.items) {
         slide.shapes.load("items");
       }
       await context.sync();
+      
+      // Count total shapes
+      let totalShapes = 0;
+      for (let slide of presentation.slides.items) {
+        totalShapes += slide.shapes.items.length;
+      }
+      
+      document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
 
       // Load all textFrames at once
       const shapesToCheck = [];
@@ -442,6 +450,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
 
         if (shapesWithText.length > 0) {
+          document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading text from ${shapesWithText.length} shapes...`;
           await context.sync();
 
           // Collect text blocks
@@ -482,30 +491,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         console.log("Could not get selected slides, using active slide");
       }
 
-      // If no selected slides, get the active slide
-      if (targetSlides.length === 0) {
-        try {
-          // Get the active slide through selected shapes
-          const selectedShapes = context.presentation.getSelectedShapes();
-          selectedShapes.load("items/id");
-          await context.sync();
-
-          if (selectedShapes.items && selectedShapes.items.length > 0) {
-            // Get the slide that contains the first selected shape
-            const shape = selectedShapes.items[0];
-            shape.load("parentSlide");
-            await context.sync();
-
-            if (shape.parentSlide) {
-              targetSlides = [shape.parentSlide];
-            }
-          }
-        } catch (e) {
-          console.log("Could not get active slide through shapes");
-        }
-      }
-
-      // Final fallback: use the first slide
+      // If no selected slides, use the first slide as fallback
       if (targetSlides.length === 0) {
         const presentation = context.presentation;
         presentation.slides.load("items");
@@ -523,10 +509,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       // Load all textFrames at once
       const shapesToCheck = [];
+      // We need to find the actual slide index in the presentation
+      const presentation = context.presentation;
+      if (!presentation.slides.items) {
+        presentation.slides.load("items");
+        await context.sync();
+      }
+      
       for (let slide of targetSlides) {
-        const slideIndex = targetSlides.indexOf(slide);
+        // Find the actual index of this slide in the presentation
+        const slideIndex = presentation.slides.items.indexOf(slide);
         for (let shape of slide.shapes.items) {
-          shapesToCheck.push({ shape, slide, slideIndex });
+          shapesToCheck.push({ shape, slide, slideIndex: slideIndex >= 0 ? slideIndex : 0 });
           try {
             shape.load("textFrame/hasText,type");
           } catch (e) {
