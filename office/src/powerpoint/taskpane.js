@@ -446,12 +446,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         for (let shape of slide.shapes.items) {
           shapesToCheck.push({ shape, slideIndex });
           shape.load("id");
-          try {
-            shape.load("textFrame/hasText,type");
-          } catch (e) {
-            // Some shapes might not have textFrame
-            console.log(`[ProcessWithAssistant] Shape without textFrame on slide ${slideIndex}`);
-          }
+          // Don't try to load textFrame properties here - it causes errors for shapes without textFrame
         }
       }
       console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
@@ -459,8 +454,36 @@ async function processWithAssistant(assistantId, instructions, scope) {
       if (shapesToCheck.length > 0) {
         await context.sync();
 
-        // Load text content for shapes that have text
+        // First, try to load textFrame for all shapes that might have it
+        for (let item of shapesToCheck) {
+          try {
+            // Try to load textFrame - this will fail silently for shapes without textFrame
+            item.shape.load("textFrame");
+          } catch (e) {
+            // Ignore - shape doesn't have textFrame
+          }
+        }
+        
+        // Sync to load textFrame properties
+        await context.sync();
+        
+        // Now check which shapes actually have text
         const shapesWithText = [];
+        for (let item of shapesToCheck) {
+          try {
+            if (item.shape.textFrame) {
+              // Now we can safely check hasText
+              item.shape.textFrame.load("hasText");
+            }
+          } catch (e) {
+            // Shape doesn't have a valid textFrame
+          }
+        }
+        
+        // Sync to load hasText property
+        await context.sync();
+        
+        // Now load text content for shapes that have text
         for (let item of shapesToCheck) {
           try {
             if (item.shape.textFrame && item.shape.textFrame.hasText) {
@@ -468,8 +491,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
               shapesWithText.push(item);
             }
           } catch (e) {
-            // Shape might not have a textFrame, continue
-            console.log(`[ProcessWithAssistant] Error checking textFrame for shape on slide ${item.slideIndex}:`, e.message);
+            console.log(`[ProcessWithAssistant] Error checking text for shape on slide ${item.slideIndex}:`, e.message);
           }
         }
         console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
@@ -504,20 +526,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
       // Get the currently active slide
       let targetSlides = [];
 
-      try {
-        // Debug: Show what we're attempting
-        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: #666;">Attempting to get current slide...</div>`;
-        
-        // For PowerPoint Online, getSelectedSlides might not be available
-        // Use a safer approach - just get the first slide or all slides
-        console.log("[ProcessWithAssistant] Using safe approach for slide selection");
-        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: #666;">Using safe slide selection approach...</div>`;
-        
-      } catch (e) {
-        // Log the error
-        console.log("[ProcessWithAssistant] Error in slide selection:", e.message);
-        document.getElementById("status").innerHTML += `<div style="font-size: 10px; color: orange;">Error: ${e.message}</div>`;
-      }
+      // For PowerPoint Online, getSelectedSlides API is not available
+      // We'll just use the first slide as the "current" slide
+      console.log("[ProcessWithAssistant] Using first slide for 'current slide' mode");
 
       // If no selected slides, use the first slide as fallback
       if (targetSlides.length === 0) {
@@ -548,11 +559,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         for (let shape of slide.shapes.items) {
           shapesToCheck.push({ shape, slideIndex: slideIdx });
           shape.load("id");
-          try {
-            shape.load("textFrame/hasText,type");
-          } catch (e) {
-            // Some shapes might not have textFrame
-          }
+          // Don't try to load textFrame properties here - it causes errors for shapes without textFrame
         }
         slideIdx++;
       }
@@ -560,8 +567,36 @@ async function processWithAssistant(assistantId, instructions, scope) {
       if (shapesToCheck.length > 0) {
         await context.sync();
 
-        // Load text content for shapes that have text
+        // First, try to load textFrame for all shapes that might have it
+        for (let item of shapesToCheck) {
+          try {
+            // Try to load textFrame - this will fail silently for shapes without textFrame
+            item.shape.load("textFrame");
+          } catch (e) {
+            // Ignore - shape doesn't have textFrame
+          }
+        }
+        
+        // Sync to load textFrame properties
+        await context.sync();
+        
+        // Now check which shapes actually have text
         const shapesWithText = [];
+        for (let item of shapesToCheck) {
+          try {
+            if (item.shape.textFrame) {
+              // Now we can safely check hasText
+              item.shape.textFrame.load("hasText");
+            }
+          } catch (e) {
+            // Shape doesn't have a valid textFrame
+          }
+        }
+        
+        // Sync to load hasText property
+        await context.sync();
+        
+        // Now load text content for shapes that have text
         for (let item of shapesToCheck) {
           try {
             if (item.shape.textFrame && item.shape.textFrame.hasText) {
@@ -569,8 +604,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
               shapesWithText.push(item);
             }
           } catch (e) {
-            // Shape might not have a textFrame, continue
-            console.log(`[ProcessWithAssistant] Error checking textFrame for shape on slide ${item.slideIndex}:`, e.message);
+            console.log(`[ProcessWithAssistant] Error checking text for shape on slide ${item.slideIndex}:`, e.message);
           }
         }
         console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
