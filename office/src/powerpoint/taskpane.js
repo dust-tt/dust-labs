@@ -362,38 +362,90 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
   // Try to load textFrame for all text-capable shapes in batches
   const shapesWithTextFrame = [];
   
-  // First batch: try to load textFrame
+  // First batch: try to load textFrame - queue all loads first
   for (let item of textCapableShapes) {
-    try {
-      item.shape.load("textFrame");
-      shapesWithTextFrame.push(item);
-    } catch (e) {
-      // Shape doesn't support textFrame
-      console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
+    item.shape.load("textFrame");
+  }
+  
+  // Sync and check which shapes actually have textFrame
+  try {
+    await context.sync();
+    
+    // After sync, check which shapes have valid textFrame
+    for (let item of textCapableShapes) {
+      try {
+        if (item.shape.textFrame) {
+          shapesWithTextFrame.push(item);
+        }
+      } catch (e) {
+        // This shape doesn't have a textFrame property
+        console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
+      }
+    }
+  } catch (e) {
+    // Some shapes failed to load textFrame - check them individually
+    console.log(`[safeExtractText] Some shapes failed textFrame load, checking individually`);
+    
+    for (let item of textCapableShapes) {
+      try {
+        // Try to access textFrame directly
+        const tf = item.shape.textFrame;
+        if (tf) {
+          shapesWithTextFrame.push(item);
+        }
+      } catch (individualError) {
+        // This specific shape doesn't support textFrame
+        console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
+      }
     }
   }
   
   if (shapesWithTextFrame.length > 0) {
-    await context.sync();
     
     // Second batch: for shapes with textFrame, try to load hasText
     const shapesToCheckForText = [];
+    
+    // Queue all hasText loads
     for (let item of shapesWithTextFrame) {
-      try {
-        if (item.shape.textFrame) {
-          item.shape.textFrame.load("hasText");
-          shapesToCheckForText.push(item);
+      if (item.shape.textFrame) {
+        item.shape.textFrame.load("hasText");
+      }
+    }
+    
+    // Sync and check which textFrames have the hasText property
+    try {
+      await context.sync();
+      
+      // After sync, check which shapes have hasText
+      for (let item of shapesWithTextFrame) {
+        try {
+          if (item.shape.textFrame && item.shape.textFrame.hasText !== undefined) {
+            shapesToCheckForText.push(item);
+          }
+        } catch (e) {
+          console.log(`[safeExtractText] Could not access hasText for shape ${item.shape.id}`);
         }
-      } catch (e) {
-        console.log(`[safeExtractText] Could not load hasText for shape ${item.shape.id}`);
+      }
+    } catch (e) {
+      console.log(`[safeExtractText] Some shapes failed hasText load, checking individually`);
+      
+      for (let item of shapesWithTextFrame) {
+        try {
+          if (item.shape.textFrame && item.shape.textFrame.hasText !== undefined) {
+            shapesToCheckForText.push(item);
+          }
+        } catch (individualError) {
+          console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support hasText`);
+        }
       }
     }
     
     if (shapesToCheckForText.length > 0) {
-      await context.sync();
       
       // Third batch: for shapes with text, load the actual text content
       const shapesWithText = [];
+      
+      // Queue text loads for shapes that have text
       for (let item of shapesToCheckForText) {
         try {
           if (item.shape.textFrame && item.shape.textFrame.hasText) {
@@ -401,12 +453,17 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
             shapesWithText.push(item);
           }
         } catch (e) {
-          console.log(`[safeExtractText] Could not load text for shape ${item.shape.id}`);
+          console.log(`[safeExtractText] Could not queue text load for shape ${item.shape.id}`);
         }
       }
       
       if (shapesWithText.length > 0) {
-        await context.sync();
+        try {
+          await context.sync();
+        } catch (e) {
+          console.log(`[safeExtractText] Some shapes failed text load: ${e.message}`);
+          // Continue with shapes that succeeded
+        }
         
         // Extract the text
         for (let item of shapesWithText) {
