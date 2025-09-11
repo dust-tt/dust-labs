@@ -393,18 +393,23 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
   let processedResults = [];
   
+  console.log(`[ProcessWithAssistant] Starting processing with scope: ${scope}`);
+  
   await PowerPoint.run(async (context) => {
     let textBlocksToProcess = [];
     // Store only metadata, not PowerPoint objects
-    // Structure: { slideIndex, shapeIndex, originalText }
+    // Structure: { slideIndex, shapeId, originalText }
+    console.log('[ProcessWithAssistant] Initializing text blocks collection');
 
     if (scope === "presentation") {
+      console.log('[ProcessWithAssistant] Processing entire presentation');
       // Get all slides in the presentation
       const presentation = context.presentation;
       presentation.slides.load("items");
       await context.sync();
       
       const totalSlides = presentation.slides.items.length;
+      console.log(`[ProcessWithAssistant] Found ${totalSlides} slides`);
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
 
       // Load all shapes from all slides at once (including their IDs)
@@ -412,6 +417,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         slide.shapes.load("items/id");
       }
       await context.sync();
+      console.log('[ProcessWithAssistant] Loaded all slide shapes');
       
       // Count total shapes
       let totalShapes = 0;
@@ -432,9 +438,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
             shape.load("textFrame/hasText,type");
           } catch (e) {
             // Some shapes might not have textFrame
+            console.log(`[ProcessWithAssistant] Shape without textFrame on slide ${slideIndex}`);
           }
         }
       }
+      console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
       
       if (shapesToCheck.length > 0) {
         await context.sync();
@@ -449,8 +457,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
             }
           } catch (e) {
             // Shape might not have a textFrame, continue
+            console.log(`[ProcessWithAssistant] Error checking textFrame for shape on slide ${item.slideIndex}:`, e.message);
           }
         }
+        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
 
         if (shapesWithText.length > 0) {
           document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading text from ${shapesWithText.length} shapes...`;
@@ -467,48 +477,59 @@ async function processWithAssistant(assistantId, instructions, scope) {
                   shapeId: item.shape.id,
                   originalText: text
                 });
+                console.log(`[ProcessWithAssistant] Added text block from slide ${item.slideIndex}, shape ${item.shape.id}`);
               }
             } catch (e) {
-              console.log("Error getting text from shape:", e);
+              console.log(`[ProcessWithAssistant] Error getting text from shape on slide ${item.slideIndex}:`, e.message);
             }
           }
         }
       }
     } else if (scope === "slide") {
+      console.log('[ProcessWithAssistant] Processing current slide');
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning current slide...`;
       
       // Get the currently active slide
       let targetSlides = [];
 
       try {
-        // Try to get selected slides first
-        const selectedSlides = context.presentation.getSelectedSlides();
-        selectedSlides.load("items");
-        await context.sync();
+        // Try to get selected slides first - this API might not be available in all versions
+        if (context.presentation.getSelectedSlides) {
+          const selectedSlides = context.presentation.getSelectedSlides();
+          selectedSlides.load("items");
+          await context.sync();
 
-        if (selectedSlides.items && selectedSlides.items.length > 0) {
-          targetSlides = selectedSlides.items;
+          if (selectedSlides.items && selectedSlides.items.length > 0) {
+            targetSlides = selectedSlides.items;
+            console.log(`[ProcessWithAssistant] Found ${targetSlides.length} selected slide(s)`);
+          }
+        } else {
+          console.log("[ProcessWithAssistant] getSelectedSlides API not available");
         }
       } catch (e) {
         // getSelectedSlides might not be available or might fail
-        console.log("Could not get selected slides, using active slide");
+        console.log("[ProcessWithAssistant] Could not get selected slides, using fallback:", e.message);
       }
 
       // If no selected slides, use the first slide as fallback
       if (targetSlides.length === 0) {
+        console.log('[ProcessWithAssistant] No selected slides, using first slide as fallback');
         const presentation = context.presentation;
         presentation.slides.load("items");
         await context.sync();
         if (presentation.slides.items.length > 0) {
           targetSlides = [presentation.slides.items[0]];
+          console.log('[ProcessWithAssistant] Using first slide as target');
         }
       }
 
       // Load all shapes from target slides at once (including their IDs)
+      console.log('[ProcessWithAssistant] Loading shapes from target slides');
       for (let slide of targetSlides) {
         slide.shapes.load("items/id");
       }
       await context.sync();
+      console.log('[ProcessWithAssistant] Shapes loaded successfully');
 
       // Load all textFrames at once
       const shapesToCheck = [];
@@ -541,8 +562,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
             }
           } catch (e) {
             // Shape might not have a textFrame, continue
+            console.log(`[ProcessWithAssistant] Error checking textFrame for shape on slide ${item.slideIndex}:`, e.message);
           }
         }
+        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
 
         if (shapesWithText.length > 0) {
           await context.sync();
@@ -560,6 +583,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
                   originalText: text,
                   isSlideScope: true
                 });
+                console.log(`[ProcessWithAssistant] Added text from slide scope, shape ${item.shape.id}`);
               }
             } catch (e) {
               console.log("Error getting text from shape:", e);
@@ -568,12 +592,15 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
     } else if (scope === "selection") {
+      console.log('[ProcessWithAssistant] Processing selection');
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning selected text...`;
       
       // Handle selected shapes/text
+      console.log('[ProcessWithAssistant] Getting selected shapes');
       const selectedShapes = context.presentation.getSelectedShapes();
       selectedShapes.load("items");
       await context.sync();
+      console.log(`[ProcessWithAssistant] Found ${selectedShapes.items.length} selected shapes`);
 
       if (selectedShapes.items.length > 0) {
         // Load shape IDs and text frames
@@ -633,8 +660,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
     // Check if we have text blocks to process
     if (textBlocksToProcess.length === 0) {
+      console.log('[ProcessWithAssistant] No text blocks found to process');
       throw new Error("No text content found to process");
     }
+    console.log(`[ProcessWithAssistant] Total text blocks to process: ${textBlocksToProcess.length}`);
 
     // Warn if processing more than 100 text blocks
     if (textBlocksToProcess.length > 100) {
@@ -743,26 +772,48 @@ async function processWithAssistant(assistantId, instructions, scope) {
   
   // Now apply all the results back to PowerPoint in a NEW context
   if (processedResults.length > 0) {
+    console.log(`[ProcessWithAssistant] Applying ${processedResults.length} processed results`);
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
     
     await PowerPoint.run(async (context) => {
+      console.log('[ProcessWithAssistant] Starting new PowerPoint context for updates');
       // Load all slides and shapes fresh
       const presentation = context.presentation;
       presentation.slides.load("items");
       await context.sync();
+      console.log(`[ProcessWithAssistant] Loaded ${presentation.slides.items.length} slides for update`);
       
-      // Load all shapes for all slides with their IDs
+      // Load all shapes for all slides with their IDs and textFrames separately
       for (let slide of presentation.slides.items) {
-        slide.shapes.load("items/id,textFrame");
+        slide.shapes.load("items/id");
       }
       await context.sync();
+      console.log('[ProcessWithAssistant] Loaded all shape IDs');
+      
+      // Now load textFrame properties for all shapes
+      for (let slide of presentation.slides.items) {
+        for (let shape of slide.shapes.items) {
+          try {
+            shape.load("textFrame");
+          } catch (e) {
+            // Some shapes don't have textFrame
+          }
+        }
+      }
+      await context.sync();
+      console.log('[ProcessWithAssistant] Loaded all textFrames for update');
       
       // Apply the updates
+      let updatedCount = 0;
+      let failedCount = 0;
+      
       for (let result of processedResults) {
         try {
+          console.log(`[ProcessWithAssistant] Updating shape ${result.shapeId}`);
+          
           if (result.isSelectedText) {
             // Can't update selected text automatically
-            console.log("Selected text can't be updated automatically");
+            console.log("[ProcessWithAssistant] Selected text can't be updated automatically");
             continue;
           }
           
@@ -776,9 +827,14 @@ async function processWithAssistant(assistantId, instructions, scope) {
               // Find shape by ID across all slides
               for (let slide of presentation.slides.items) {
                 for (let shape of slide.shapes.items) {
-                  if (shape.id === result.shapeId && shape.textFrame) {
-                    shape.textFrame.textRange.text = result.newText;
-                    shapeFound = true;
+                  if (shape.id === result.shapeId) {
+                    if (shape.textFrame && shape.textFrame.textRange) {
+                      shape.textFrame.textRange.text = result.newText;
+                      shapeFound = true;
+                      console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide scope`);
+                    } else {
+                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame or textRange`);
+                    }
                     break;
                   }
                 }
@@ -789,9 +845,14 @@ async function processWithAssistant(assistantId, instructions, scope) {
               const slide = presentation.slides.items[result.slideIndex];
               if (slide) {
                 for (let shape of slide.shapes.items) {
-                  if (shape.id === result.shapeId && shape.textFrame) {
-                    shape.textFrame.textRange.text = result.newText;
-                    shapeFound = true;
+                  if (shape.id === result.shapeId) {
+                    if (shape.textFrame && shape.textFrame.textRange) {
+                      shape.textFrame.textRange.text = result.newText;
+                      shapeFound = true;
+                      console.log(`[ProcessWithAssistant] Updated shape ${result.shapeId} in slide scope`);
+                    } else {
+                      console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame or textRange`);
+                    }
                     break;
                   }
                 }
@@ -814,17 +875,28 @@ async function processWithAssistant(assistantId, instructions, scope) {
           }
           
           if (!shapeFound) {
-            console.log("Could not find shape to update:", result.shapeId);
+            console.log(`[ProcessWithAssistant] Could not find shape to update: ${result.shapeId}`);
+            failedCount++;
+          } else {
+            updatedCount++;
           }
         } catch (e) {
-          console.error("Error updating text block:", e);
+          console.error(`[ProcessWithAssistant] Error updating text block:`, e.message);
+          failedCount++;
         }
       }
       
+      console.log(`[ProcessWithAssistant] Update complete. Updated: ${updatedCount}, Failed: ${failedCount}`);
+      
       await context.sync();
+      console.log('[ProcessWithAssistant] Final sync completed');
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Presentation updated successfully`;
     });
+  } else {
+    console.log('[ProcessWithAssistant] No results to apply');
   }
+  
+  console.log('[ProcessWithAssistant] Process completed successfully');
 }
 
 function updateProgressDisplay() {
