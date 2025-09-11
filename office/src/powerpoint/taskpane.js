@@ -454,47 +454,53 @@ async function processWithAssistant(assistantId, instructions, scope) {
       if (shapesToCheck.length > 0) {
         await context.sync();
 
-        // First, try to load textFrame for all shapes that might have it
+        // Load shape types first to identify which shapes can have text
         for (let item of shapesToCheck) {
-          try {
-            // Try to load textFrame - this will fail silently for shapes without textFrame
-            item.shape.load("textFrame");
-          } catch (e) {
-            // Ignore - shape doesn't have textFrame
-          }
+          item.shape.load("type");
         }
-        
-        // Sync to load textFrame properties
         await context.sync();
         
-        // Now check which shapes actually have text
+        // Filter to only shapes that can have text
+        // Shape types that support text: GeometricShape, TextBox, Placeholder
+        const textCapableShapes = shapesToCheck.filter(item => {
+          const shapeType = item.shape.type;
+          // These are the shape types that typically have textFrame
+          return shapeType === "GeometricShape" || 
+                 shapeType === "TextBox" || 
+                 shapeType === "Placeholder" ||
+                 shapeType === "Group" ||
+                 !shapeType; // Sometimes type is undefined but shape has text
+        });
+        
+        console.log(`[ProcessWithAssistant] Found ${textCapableShapes.length} text-capable shapes out of ${shapesToCheck.length} total shapes`);
+        
+        // Now safely load textFrame for text-capable shapes only
         const shapesWithText = [];
-        for (let item of shapesToCheck) {
+        for (let item of textCapableShapes) {
           try {
-            if (item.shape.textFrame) {
-              // Now we can safely check hasText
-              item.shape.textFrame.load("hasText");
-            }
+            item.shape.textFrame.load("hasText");
           } catch (e) {
-            // Shape doesn't have a valid textFrame
+            // Even text-capable shapes might not have textFrame in some cases
+            continue;
           }
         }
         
-        // Sync to load hasText property
+        // Sync to get hasText property
         await context.sync();
         
         // Now load text content for shapes that have text
-        for (let item of shapesToCheck) {
+        for (let item of textCapableShapes) {
           try {
             if (item.shape.textFrame && item.shape.textFrame.hasText) {
               item.shape.textFrame.load("textRange/text");
               shapesWithText.push(item);
             }
           } catch (e) {
-            console.log(`[ProcessWithAssistant] Error checking text for shape on slide ${item.slideIndex}:`, e.message);
+            // Skip shapes that don't have accessible text
           }
         }
-        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
+        
+        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with actual text`);
 
         if (shapesWithText.length > 0) {
           document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading text from ${shapesWithText.length} shapes...`;
@@ -567,47 +573,53 @@ async function processWithAssistant(assistantId, instructions, scope) {
       if (shapesToCheck.length > 0) {
         await context.sync();
 
-        // First, try to load textFrame for all shapes that might have it
+        // Load shape types first to identify which shapes can have text
         for (let item of shapesToCheck) {
-          try {
-            // Try to load textFrame - this will fail silently for shapes without textFrame
-            item.shape.load("textFrame");
-          } catch (e) {
-            // Ignore - shape doesn't have textFrame
-          }
+          item.shape.load("type");
         }
-        
-        // Sync to load textFrame properties
         await context.sync();
         
-        // Now check which shapes actually have text
+        // Filter to only shapes that can have text
+        // Shape types that support text: GeometricShape, TextBox, Placeholder
+        const textCapableShapes = shapesToCheck.filter(item => {
+          const shapeType = item.shape.type;
+          // These are the shape types that typically have textFrame
+          return shapeType === "GeometricShape" || 
+                 shapeType === "TextBox" || 
+                 shapeType === "Placeholder" ||
+                 shapeType === "Group" ||
+                 !shapeType; // Sometimes type is undefined but shape has text
+        });
+        
+        console.log(`[ProcessWithAssistant] Found ${textCapableShapes.length} text-capable shapes out of ${shapesToCheck.length} total shapes`);
+        
+        // Now safely load textFrame for text-capable shapes only
         const shapesWithText = [];
-        for (let item of shapesToCheck) {
+        for (let item of textCapableShapes) {
           try {
-            if (item.shape.textFrame) {
-              // Now we can safely check hasText
-              item.shape.textFrame.load("hasText");
-            }
+            item.shape.textFrame.load("hasText");
           } catch (e) {
-            // Shape doesn't have a valid textFrame
+            // Even text-capable shapes might not have textFrame in some cases
+            continue;
           }
         }
         
-        // Sync to load hasText property
+        // Sync to get hasText property
         await context.sync();
         
         // Now load text content for shapes that have text
-        for (let item of shapesToCheck) {
+        for (let item of textCapableShapes) {
           try {
             if (item.shape.textFrame && item.shape.textFrame.hasText) {
               item.shape.textFrame.load("textRange/text");
               shapesWithText.push(item);
             }
           } catch (e) {
-            console.log(`[ProcessWithAssistant] Error checking text for shape on slide ${item.slideIndex}:`, e.message);
+            // Skip shapes that don't have accessible text
           }
         }
-        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with text`);
+        
+        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with actual text`);
 
         if (shapesWithText.length > 0) {
           await context.sync();
