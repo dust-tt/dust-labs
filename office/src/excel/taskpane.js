@@ -705,7 +705,9 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                             // Only update cell if this is still the current processing
                             if (processingId === currentProcessingId && !cancelRequested) {
                                 const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
-                                targetCell.values = [[lastAgentMessage ? lastAgentMessage.content : "No response"]];
+                                // Trim extra lines at the beginning and end of the agent answer
+                                const agentContent = lastAgentMessage ? lastAgentMessage.content.trim() : "No response";
+                                targetCell.values = [[agentContent]];
                                 targetCell.format.fill.color = "#f0f9ff"; // Light blue background
                                 
                                 // Sync immediately to update the cell in Excel

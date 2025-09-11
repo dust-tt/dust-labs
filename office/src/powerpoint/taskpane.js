@@ -302,6 +302,97 @@ async function loadAssistants() {
   }
 }
 
+// Helper function to safely extract text from shapes
+// Returns an array of objects with slideIndex, shapeId, and originalText
+async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) {
+  const textBlocks = [];
+  
+  if (!shapes || shapes.length === 0) {
+    return textBlocks;
+  }
+  
+  // First, load shape types to identify which shapes can have text
+  for (let item of shapes) {
+    item.shape.load("type,id");
+  }
+  await context.sync();
+  
+  // Filter to only shapes that can have text
+  // Shape types that support text: GeometricShape, TextBox, Placeholder
+  const textCapableShapes = shapes.filter(item => {
+    const shapeType = item.shape.type;
+    // These are the shape types that typically have textFrame
+    return shapeType === "GeometricShape" || 
+           shapeType === "TextBox" || 
+           shapeType === "Placeholder" ||
+           shapeType === "Group" ||
+           !shapeType; // Sometimes type is undefined but shape has text
+  });
+  
+  console.log(`[safeExtractText] Found ${textCapableShapes.length} text-capable shapes out of ${shapes.length} total shapes`);
+  
+  if (textCapableShapes.length === 0) {
+    return textBlocks;
+  }
+  
+  // Try to load textFrame.hasText for text-capable shapes
+  const shapesWithTextFrame = [];
+  for (let item of textCapableShapes) {
+    try {
+      item.shape.textFrame.load("hasText");
+      shapesWithTextFrame.push(item);
+    } catch (e) {
+      // Even text-capable shapes might not have textFrame in some cases
+      console.log(`Shape ${item.shape.id} doesn't have accessible textFrame`);
+    }
+  }
+  
+  if (shapesWithTextFrame.length === 0) {
+    return textBlocks;
+  }
+  
+  // Sync to get hasText property
+  await context.sync();
+  
+  // Now load text content for shapes that have text
+  const shapesWithText = [];
+  for (let item of shapesWithTextFrame) {
+    try {
+      if (item.shape.textFrame && item.shape.textFrame.hasText) {
+        item.shape.textFrame.load("textRange/text");
+        shapesWithText.push(item);
+      }
+    } catch (e) {
+      console.log(`Shape ${item.shape.id} hasText check failed`);
+    }
+  }
+  
+  if (shapesWithText.length === 0) {
+    return textBlocks;
+  }
+  
+  console.log(`[safeExtractText] Found ${shapesWithText.length} shapes with actual text`);
+  await context.sync();
+  
+  // Collect text blocks
+  for (let item of shapesWithText) {
+    try {
+      const text = item.shape.textFrame.textRange.text;
+      if (text && text.trim()) {
+        textBlocks.push({
+          slideIndex: item.slideIndex + slideIndexOffset,
+          shapeId: item.shape.id,
+          originalText: text
+        });
+      }
+    } catch (e) {
+      console.log(`Error getting text from shape ${item.shape.id}:`, e.message);
+    }
+  }
+  
+  return textBlocks;
+}
+
 // Process functions
 async function handleSubmit(e) {
   e.preventDefault();
@@ -384,7 +475,8 @@ async function handleSubmit(e) {
       document.getElementById("status").innerHTML = errorDetails;
     }
   } finally {
-    // Reset buttons
+    // Always reset buttons and cancellation flag
+    processingCancelled = false;
     document.getElementById("submitBtn").disabled = false;
     document.getElementById("submitBtn").style.display = "block";
     document.getElementById("cancelBtn").style.display = "none";
@@ -424,9 +516,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
       console.log(`[ProcessWithAssistant] Found ${totalSlides} slides`);
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
 
-      // Load all shapes from all slides at once (including their IDs)
+      // Load all shapes from all slides at once
       for (let slide of presentation.slides.items) {
-        slide.shapes.load("items/id");
+        slide.shapes.load("items");
       }
       await context.sync();
       console.log('[ProcessWithAssistant] Loaded all slide shapes');
@@ -439,91 +531,25 @@ async function processWithAssistant(assistantId, instructions, scope) {
       
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
 
-      // Load all textFrames at once
+      // Prepare shapes for safe extraction
       const shapesToCheck = [];
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
         for (let shape of slide.shapes.items) {
           shapesToCheck.push({ shape, slideIndex });
-          shape.load("id");
-          // Don't try to load textFrame properties here - it causes errors for shapes without textFrame
         }
       }
+      
       console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
       
-      if (shapesToCheck.length > 0) {
-        await context.sync();
-
-        // Load shape types first to identify which shapes can have text
-        for (let item of shapesToCheck) {
-          item.shape.load("type");
-        }
-        await context.sync();
-        
-        // Filter to only shapes that can have text
-        // Shape types that support text: GeometricShape, TextBox, Placeholder
-        const textCapableShapes = shapesToCheck.filter(item => {
-          const shapeType = item.shape.type;
-          // These are the shape types that typically have textFrame
-          return shapeType === "GeometricShape" || 
-                 shapeType === "TextBox" || 
-                 shapeType === "Placeholder" ||
-                 shapeType === "Group" ||
-                 !shapeType; // Sometimes type is undefined but shape has text
-        });
-        
-        console.log(`[ProcessWithAssistant] Found ${textCapableShapes.length} text-capable shapes out of ${shapesToCheck.length} total shapes`);
-        
-        // Now safely load textFrame for text-capable shapes only
-        const shapesWithText = [];
-        for (let item of textCapableShapes) {
-          try {
-            item.shape.textFrame.load("hasText");
-          } catch (e) {
-            // Even text-capable shapes might not have textFrame in some cases
-            continue;
-          }
-        }
-        
-        // Sync to get hasText property
-        await context.sync();
-        
-        // Now load text content for shapes that have text
-        for (let item of textCapableShapes) {
-          try {
-            if (item.shape.textFrame && item.shape.textFrame.hasText) {
-              item.shape.textFrame.load("textRange/text");
-              shapesWithText.push(item);
-            }
-          } catch (e) {
-            // Skip shapes that don't have accessible text
-          }
-        }
-        
-        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with actual text`);
-
-        if (shapesWithText.length > 0) {
-          document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading text from ${shapesWithText.length} shapes...`;
-          await context.sync();
-
-          // Collect text blocks
-          for (let item of shapesWithText) {
-            try {
-              const text = item.shape.textFrame.textRange.text;
-              if (text && text.trim()) {
-                // Store metadata to identify text blocks later
-                textBlocksToProcess.push({
-                  slideIndex: item.slideIndex,
-                  shapeId: item.shape.id,
-                  originalText: text
-                });
-                console.log(`[ProcessWithAssistant] Added text block from slide ${item.slideIndex}, shape ${item.shape.id}`);
-              }
-            } catch (e) {
-              console.log(`[ProcessWithAssistant] Error getting text from shape on slide ${item.slideIndex}:`, e.message);
-            }
-          }
-        }
+      // Use the safe extraction function
+      const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+      textBlocksToProcess = extractedBlocks;
+      
+      console.log(`[ProcessWithAssistant] Extracted ${textBlocksToProcess.length} text blocks from presentation`);
+      
+      if (textBlocksToProcess.length > 0) {
+        document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing ${textBlocksToProcess.length} text blocks...`;
       }
     } else if (scope === "slide") {
       console.log('[ProcessWithAssistant] Processing current slide');
@@ -548,102 +574,39 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
 
-      // Load all shapes from target slides at once (including their IDs)
+      // Load all shapes from target slides
       console.log('[ProcessWithAssistant] Loading shapes from target slides');
       for (let slide of targetSlides) {
-        slide.shapes.load("items/id");
+        slide.shapes.load("items");
       }
       await context.sync();
       console.log('[ProcessWithAssistant] Shapes loaded successfully');
 
-      // Load all textFrames at once
+      // Prepare shapes for safe extraction
       const shapesToCheck = [];
-      
-      // For slide scope, collect shapes from target slides
       let slideIdx = 0;
       for (let slide of targetSlides) {
         for (let shape of slide.shapes.items) {
           shapesToCheck.push({ shape, slideIndex: slideIdx });
-          shape.load("id");
-          // Don't try to load textFrame properties here - it causes errors for shapes without textFrame
         }
         slideIdx++;
       }
       
-      if (shapesToCheck.length > 0) {
-        await context.sync();
-
-        // Load shape types first to identify which shapes can have text
-        for (let item of shapesToCheck) {
-          item.shape.load("type");
-        }
-        await context.sync();
-        
-        // Filter to only shapes that can have text
-        // Shape types that support text: GeometricShape, TextBox, Placeholder
-        const textCapableShapes = shapesToCheck.filter(item => {
-          const shapeType = item.shape.type;
-          // These are the shape types that typically have textFrame
-          return shapeType === "GeometricShape" || 
-                 shapeType === "TextBox" || 
-                 shapeType === "Placeholder" ||
-                 shapeType === "Group" ||
-                 !shapeType; // Sometimes type is undefined but shape has text
-        });
-        
-        console.log(`[ProcessWithAssistant] Found ${textCapableShapes.length} text-capable shapes out of ${shapesToCheck.length} total shapes`);
-        
-        // Now safely load textFrame for text-capable shapes only
-        const shapesWithText = [];
-        for (let item of textCapableShapes) {
-          try {
-            item.shape.textFrame.load("hasText");
-          } catch (e) {
-            // Even text-capable shapes might not have textFrame in some cases
-            continue;
-          }
-        }
-        
-        // Sync to get hasText property
-        await context.sync();
-        
-        // Now load text content for shapes that have text
-        for (let item of textCapableShapes) {
-          try {
-            if (item.shape.textFrame && item.shape.textFrame.hasText) {
-              item.shape.textFrame.load("textRange/text");
-              shapesWithText.push(item);
-            }
-          } catch (e) {
-            // Skip shapes that don't have accessible text
-          }
-        }
-        
-        console.log(`[ProcessWithAssistant] Found ${shapesWithText.length} shapes with actual text`);
-
-        if (shapesWithText.length > 0) {
-          await context.sync();
-
-          // Collect text blocks
-          for (let item of shapesWithText) {
-            try {
-              const text = item.shape.textFrame.textRange.text;
-              if (text && text.trim()) {
-                // Store metadata to identify text blocks later
-                // For slide scope, slideIndex is relative to targetSlides, not all slides
-                textBlocksToProcess.push({
-                  slideIndex: item.slideIndex,
-                  shapeId: item.shape.id,
-                  originalText: text,
-                  isSlideScope: true
-                });
-                console.log(`[ProcessWithAssistant] Added text from slide scope, shape ${item.shape.id}`);
-              }
-            } catch (e) {
-              console.log("Error getting text from shape:", e);
-            }
-          }
-        }
+      console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
+      
+      // Use the safe extraction function
+      const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+      
+      // Mark as slide scope for later processing
+      for (let block of extractedBlocks) {
+        block.isSlideScope = true;
+      }
+      
+      textBlocksToProcess = extractedBlocks;
+      console.log(`[ProcessWithAssistant] Extracted ${textBlocksToProcess.length} text blocks from current slide`);
+      
+      if (textBlocksToProcess.length > 0) {
+        document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing ${textBlocksToProcess.length} text blocks...`;
       }
     } else if (scope === "selection") {
       console.log('[ProcessWithAssistant] Processing selection');
@@ -657,43 +620,22 @@ async function processWithAssistant(assistantId, instructions, scope) {
       console.log(`[ProcessWithAssistant] Found ${selectedShapes.items.length} selected shapes`);
 
       if (selectedShapes.items.length > 0) {
-        // Load shape IDs and text frames
-        for (let shape of selectedShapes.items) {
-          shape.load("id,textFrame/hasText");
+        // Prepare shapes for safe extraction
+        const shapesToCheck = [];
+        for (let i = 0; i < selectedShapes.items.length; i++) {
+          shapesToCheck.push({ shape: selectedShapes.items[i], slideIndex: 0 });
         }
-        await context.sync();
         
-        // Load text for shapes that have it
-        for (let shape of selectedShapes.items) {
-          try {
-            if (shape.textFrame && shape.textFrame.hasText) {
-              shape.textFrame.load("textRange/text");
-            }
-          } catch (e) {
-            // Shape might not have a textFrame
-          }
-        }
-        await context.sync();
+        // Use the safe extraction function
+        const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
         
-        // Collect text blocks
-        for (let shape of selectedShapes.items) {
-          try {
-            if (shape.textFrame && shape.textFrame.hasText) {
-              const text = shape.textFrame.textRange.text;
-              if (text && text.trim()) {
-                // For selected shapes, store shape ID
-                textBlocksToProcess.push({
-                  slideIndex: null,
-                  shapeId: shape.id,
-                  originalText: text,
-                  isSelection: true
-                });
-              }
-            }
-          } catch (e) {
-            console.log("Error processing shape:", e);
-          }
+        // Mark as selection for later processing
+        for (let block of extractedBlocks) {
+          block.isSelection = true;
+          block.slideIndex = null; // Clear slideIndex for selections
         }
+        
+        textBlocksToProcess = extractedBlocks;
       } else {
         // Check for selected text range
         const selectedTextRange = context.presentation.getSelectedTextRange();
@@ -710,6 +652,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
           });
         }
       }
+      
+      console.log(`[ProcessWithAssistant] Extracted ${textBlocksToProcess.length} text blocks from selection`);
     }
 
     // Check if we have text blocks to process
@@ -739,7 +683,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
     for (let i = 0; i < textBlocksToProcess.length; i += BATCH_SIZE) {
       // Check if processing was cancelled
       if (processingCancelled) {
-        throw new Error("Processing cancelled by user");
+        document.getElementById("status").innerHTML = "Processing cancelled";
+        return; // Exit the entire function immediately
       }
       
       const batch = textBlocksToProcess.slice(
@@ -751,10 +696,19 @@ async function processWithAssistant(assistantId, instructions, scope) {
       for (let textBlock of batch) {
         // Check cancellation for each item
         if (processingCancelled) {
-          throw new Error("Processing cancelled by user");
+          // Clean up and exit immediately
+          document.getElementById("status").innerHTML = "Processing cancelled";
+          return; // Exit the entire function
         }
         
         try {
+          // Double-check cancellation before making API call
+          if (processingCancelled) {
+            console.log("Processing cancelled before API call");
+            document.getElementById("status").innerHTML = "Processing cancelled";
+            return;
+          }
+          
           // Prepare the content for the API
           const inputContent =
             (instructions || "Process this text:") +
@@ -790,6 +744,13 @@ async function processWithAssistant(assistantId, instructions, scope) {
             },
           });
 
+          // Check if cancelled after API call
+          if (processingCancelled) {
+            console.log("Processing cancelled after API call");
+            document.getElementById("status").innerHTML = "Processing cancelled";
+            return;
+          }
+          
           const messages = result.conversation.content;
           const lastAgentMessage = messages
             .flat()
@@ -842,7 +803,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
   }
   
   // Now apply all the results back to PowerPoint in a NEW context
-  if (processedResults.length > 0) {
+  // But ONLY if not cancelled
+  if (processedResults.length > 0 && !processingCancelled) {
     console.log(`[ProcessWithAssistant] Applying ${processedResults.length} processed results`);
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
     
@@ -983,8 +945,6 @@ async function countPresentationTextBlocks() {
   document.getElementById("status").innerHTML = '<div class="spinner"></div> Loading presentation...';
   
   return await PowerPoint.run(async (context) => {
-    let textBlockCount = 0;
-    
     // Get all slides in the presentation
     const presentation = context.presentation;
     presentation.slides.load("items");
@@ -1007,53 +967,18 @@ async function countPresentationTextBlocks() {
     
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
     
-    // Load all textFrames at once
+    // Prepare shapes for safe extraction
     const shapesToCheck = [];
     for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
       const slide = presentation.slides.items[slideIndex];
       for (let shape of slide.shapes.items) {
         shapesToCheck.push({ shape, slideIndex });
-        try {
-          shape.load("textFrame/hasText");
-        } catch (e) {
-          // Some shapes might not have textFrame
-        }
       }
     }
     
-    if (shapesToCheck.length > 0) {
-      await context.sync();
-      
-      // Load text content for shapes that have text
-      const shapesWithText = [];
-      for (let item of shapesToCheck) {
-        try {
-          if (item.shape.textFrame && item.shape.textFrame.hasText) {
-            item.shape.textFrame.load("textRange/text");
-            shapesWithText.push(item);
-          }
-        } catch (e) {
-          // Shape might not have a textFrame
-        }
-      }
-      
-      if (shapesWithText.length > 0) {
-        document.getElementById("status").innerHTML = `<div class="spinner"></div> Reading text from ${shapesWithText.length} shapes...`;
-        await context.sync();
-        
-        // Count text blocks
-        for (let item of shapesWithText) {
-          try {
-            const text = item.shape.textFrame.textRange.text;
-            if (text && text.trim()) {
-              textBlockCount++;
-            }
-          } catch (e) {
-            console.log("Error getting text:", e);
-          }
-        }
-      }
-    }
+    // Use the safe extraction function to get text blocks
+    const textBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+    const textBlockCount = textBlocks.length;
     
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${textBlockCount} text blocks`;
     return textBlockCount;
@@ -1100,9 +1025,12 @@ function cancelProcessing() {
   processingCancelled = true;
   document.getElementById("status").innerHTML = "⚠️ Cancelling...";
   
-  // Hide cancel button immediately
+  // Immediately restore UI to ready state
   document.getElementById("cancelBtn").style.display = "none";
+  document.getElementById("submitBtn").style.display = "block";
+  document.getElementById("submitBtn").disabled = false;
   
+  // Show cancelled status briefly
   setTimeout(() => {
     document.getElementById("status").innerHTML = "Processing cancelled";
     setTimeout(() => {
