@@ -1,7 +1,6 @@
 function convertMarkdownToHtml(markdown, conversationData) {
   // Check if markdown is null or not a string
   if (typeof markdown !== "string") {
-    console.error("Invalid markdown input:", markdown);
     return ""; // Return an empty string or handle as needed
   }
 
@@ -52,7 +51,6 @@ let currentConversation = null;
 // Helper function to get source URL from the conversation data
 function getSourceUrlFromReference(reference) {
   if (!currentConversation) {
-    console.warn("No conversation data available");
     return "#";
   }
 
@@ -63,7 +61,6 @@ function getSourceUrlFromReference(reference) {
       );
     return document ? document.sourceUrl : "#";
   } catch (error) {
-    console.error("Error finding source URL for reference:", error);
     return "#";
   }
 }
@@ -76,6 +73,12 @@ function getSourceUrlFromReference(reference) {
   window.copyMessage = copyMessage;
 
   let defaultAssistantIds;
+  const timeouts = [];
+
+  // Clean up timeouts on app destroy
+  client.on('app.willDestroy', () => {
+    timeouts.forEach(timeout => clearTimeout(timeout));
+  });
 
   // Helper function to get Dust base URL based on region
   function getDustBaseUrl(metadata) {
@@ -145,7 +148,7 @@ function getSourceUrlFromReference(reference) {
       const data = await client.get("ticket");
       sendTicketToDust(data.ticket);
     } catch (error) {
-      console.error("Error getting ticket data:", error);
+      // Error getting ticket data - silently fail
     }
   }
 
@@ -172,7 +175,6 @@ function getSourceUrlFromReference(reference) {
         return false;
       }
     } catch (error) {
-      console.error("Error validating user:", error);
       return false;
     }
   }
@@ -264,9 +266,10 @@ function getSourceUrlFromReference(reference) {
           );
         })
         .on("select2:open", () => {
-          setTimeout(() => {
+          const timeout = setTimeout(() => {
             document.querySelector(".select2-search__field").focus();
           }, 0);
+          timeouts.push(timeout);
         });
 
       function formatAssistant(assistant) {
@@ -426,11 +429,12 @@ function getSourceUrlFromReference(reference) {
                   if (!text || !text.trim()) {
                     if (existingChainOfThought) {
                       existingChainOfThought.classList.add("fade-out");
-                      setTimeout(() => {
+                      const timeout = setTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
                         }
                       }, 200);
+                      timeouts.push(timeout);
                     }
                     return "";
                   }
@@ -446,10 +450,11 @@ function getSourceUrlFromReference(reference) {
                     // Update existing content
                     existingChainOfThought.innerHTML = escaped;
                     if (!existingChainOfThought.classList.contains("visible")) {
-                      setTimeout(
+                      const timeout = setTimeout(
                         () => existingChainOfThought.classList.add("visible"),
                         10
                       );
+                      timeouts.push(timeout);
                     }
                     return ""; // Return empty since element already exists in DOM
                   } else {
@@ -459,20 +464,6 @@ function getSourceUrlFromReference(reference) {
                 }
 
                 const chainOfThoughtHtml = formatChainOfThought(chainOfThought);
-
-                // Debug logging for chain of thought
-                if (chainOfThought && chainOfThought.trim()) {
-                  console.log("Chain of thought found:", chainOfThought);
-                  console.log("Chain of thought HTML:", chainOfThoughtHtml);
-                } else {
-                  console.log("No chain of thought found or empty");
-                }
-
-                // Test: force show chain of thought for debugging (remove this after testing)
-                // const testChainOfThought = message.chainOfThought ? formatChainOfThought('• Testing chain of thought display\n• This should appear immediately') : '';
-                // if (message.chainOfThought) {
-                //   console.log('FORCED TEST: Displaying test chain of thought');
-                // }
 
                 if (message.status === "succeeded") {
                   // Message is complete - hide chain of thought and show final answer
@@ -488,14 +479,15 @@ function getSourceUrlFromReference(reference) {
                     );
                     if (existingChainOfThought) {
                       existingChainOfThought.classList.add("fade-out");
-                      setTimeout(() => {
+                      const timeout = setTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
                         }
                       }, 200);
+                      timeouts.push(timeout);
                     }
 
-                    setTimeout(() => {
+                    const mainTimeout = setTimeout(() => {
                       assistantMessageElement.innerHTML = `
                         <h4>@${agentName}:</h4>
                         <pre class=\"markdown-content\" data-markdown="${message.content.replace(
@@ -524,6 +516,7 @@ function getSourceUrlFromReference(reference) {
                         </div>
                       `;
                     }, 200);
+                    timeouts.push(mainTimeout);
                   }
                 } else if (
                   message.status === "created" ||
@@ -554,7 +547,7 @@ function getSourceUrlFromReference(reference) {
                         `;
 
                         // Trigger animation after DOM update
-                        setTimeout(() => {
+                        const timeout = setTimeout(() => {
                           const element = document.getElementById(
                             `chain-of-thought-${uniqueId}`
                           );
@@ -562,6 +555,7 @@ function getSourceUrlFromReference(reference) {
                             element.classList.add("visible");
                           }
                         }, 50);
+                        timeouts.push(timeout);
                       } else {
                         // Update existing chain of thought content
                         chainOfThoughtElement.innerHTML = escaped;
@@ -611,7 +605,7 @@ function getSourceUrlFromReference(reference) {
                         `;
 
                         // Trigger animation after DOM update
-                        setTimeout(() => {
+                        const timeout = setTimeout(() => {
                           const element = document.getElementById(
                             `chain-of-thought-${uniqueId}`
                           );
@@ -619,6 +613,7 @@ function getSourceUrlFromReference(reference) {
                             element.classList.add("visible");
                           }
                         }, 50);
+                        timeouts.push(timeout);
                       } else {
                         // Update existing chain of thought content
                         chainOfThoughtElement.innerHTML = escaped;
@@ -661,7 +656,7 @@ function getSourceUrlFromReference(reference) {
           await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
       } catch (error) {
-        console.error("Error polling conversation events:", error);
+        // Error polling conversation - retry
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
       }
     }
@@ -901,8 +896,6 @@ function getSourceUrlFromReference(reference) {
 
       await client.invoke("resize", { width: "100%", height: "600px" });
     } catch (error) {
-      console.error("Error receiving response from Dust:", error);
-
       const assistantMessageElement = document.getElementById(
         `assistant-${uniqueId}`
       );
@@ -944,11 +937,12 @@ function getSourceUrlFromReference(reference) {
 
       // Visual feedback
       button.classList.add("clicked");
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         button.classList.remove("clicked");
       }, 500);
+      timeouts.push(timeout);
     } catch (error) {
-      console.error(`Error inserting answer as ${type} note:`, error);
+      // Error inserting answer - silently fail
     }
   }
 
@@ -972,11 +966,12 @@ function getSourceUrlFromReference(reference) {
       button.classList.add("clicked");
 
       // Reset after 500ms
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         button.classList.remove("clicked");
       }, 500);
+      timeouts.push(timeout);
     } catch (error) {
-      console.error("Error copying message:", error);
+      // Error copying message - silently fail
     }
   }
 
