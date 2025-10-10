@@ -73,6 +73,7 @@ function getSourceUrlFromReference(reference) {
   const isProd = true;
   window.client = client;
   window.useAnswer = useAnswer;
+  window.copyMessage = copyMessage;
 
   let defaultAssistantIds;
 
@@ -261,6 +262,11 @@ function getSourceUrlFromReference(reference) {
             "selectedAssistantName",
             e.target.options[e.target.selectedIndex].text
           );
+        })
+        .on("select2:open", () => {
+          setTimeout(() => {
+            document.querySelector(".select2-search__field").focus();
+          }, 0);
         });
 
       function formatAssistant(assistant) {
@@ -469,11 +475,18 @@ function getSourceUrlFromReference(reference) {
                         }
                       }, 200);
                     }
-                    
+
                     setTimeout(() => {
                       assistantMessageElement.innerHTML = `
-                        <h4>@${agentName}:</h4>
-                        <pre class=\"markdown-content\">${htmlAnswer}</pre>
+                        <div class="message-header">
+                          <h4>@${agentName}:</h4>
+                          <button class="copy-button" onclick="copyMessage(this)" title="Copy message">
+                            <svg viewBox="0 0 24 24">
+                              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                          </button>
+                        </div>
+                        <pre class=\"markdown-content\" data-markdown="${message.content.replace(/"/g, '&quot;')}">${htmlAnswer}</pre>
                         <button class=\"use-button public-reply\" onclick=\"useAnswer(this, 'public')\">Use as public reply</button>
                         <button class=\"use-button private-note\" onclick=\"useAnswer(this, 'private')\">Use as internal note</button>
                       `;
@@ -881,6 +894,39 @@ function getSourceUrlFromReference(reference) {
       await client.invoke("ticket.editor.insert", formattedAnswer);
     } catch (error) {
       console.error(`Error inserting answer as ${type} note:`, error);
+    }
+  }
+
+  async function copyMessage(button) {
+    try {
+      const assistantMessageDiv = button.closest(".assistant-message");
+      const markdownContent = assistantMessageDiv.querySelector(".markdown-content");
+
+      // Get the original markdown text stored in the data attribute
+      const originalMarkdown = markdownContent.dataset.markdown;
+
+      if (originalMarkdown) {
+        await navigator.clipboard.writeText(originalMarkdown);
+      } else {
+        // Fallback: copy the text content
+        await navigator.clipboard.writeText(markdownContent.textContent);
+      }
+
+      // Visual feedback
+      const icon = button.querySelector('svg');
+      const originalIcon = icon.innerHTML;
+
+      // Change to checkmark icon
+      icon.innerHTML = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
+      button.classList.add('copied');
+
+      // Reset after 2 seconds
+      setTimeout(() => {
+        icon.innerHTML = originalIcon;
+        button.classList.remove('copied');
+      }, 2000);
+    } catch (error) {
+      console.error('Error copying message:', error);
     }
   }
 

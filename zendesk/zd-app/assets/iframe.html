@@ -351,6 +351,45 @@
       .chain-of-thought::-webkit-scrollbar-thumb:hover {
         background: #a8a8a8;
       }
+
+      .message-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .message-header h4 {
+        margin: 0;
+      }
+
+      .copy-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        color: #666;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+      }
+
+      .copy-button:hover {
+        background-color: #f0f0f0;
+        color: #333;
+      }
+
+      .copy-button svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+      }
+
+      .copy-button.copied {
+        color: #10b981;
+      }
     </style>
   </head>
   <body>
