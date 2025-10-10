@@ -390,6 +390,65 @@
       .copy-button.copied {
         color: #10b981;
       }
+
+      .action-buttons {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        align-items: center;
+      }
+
+      .action-buttons .use-button,
+      .action-buttons .copy-button {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border: 1px solid #e0e0e0;
+        background: #ffffff;
+        color: #444;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all 0.15s ease;
+        margin: 0;
+        width: auto;
+      }
+
+      .action-buttons .use-button:hover,
+      .action-buttons .copy-button:hover {
+        background: #f5f5f5;
+        border-color: #d0d0d0;
+        transform: translateY(-1px);
+      }
+
+      .action-buttons .use-button:active,
+      .action-buttons .copy-button:active {
+        transform: translateY(0);
+        background: #ebebeb;
+      }
+
+      .action-buttons .use-button svg,
+      .action-buttons .copy-button svg {
+        width: 14px;
+        height: 14px;
+        opacity: 0.7;
+      }
+
+      .action-buttons .use-button.clicked,
+      .action-buttons .copy-button.clicked {
+        background: #10b981;
+        border-color: #10b981;
+        color: white;
+      }
+
+      .action-buttons .use-button.clicked svg,
+      .action-buttons .copy-button.clicked svg {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>

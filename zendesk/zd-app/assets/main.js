@@ -6,7 +6,7 @@ function convertMarkdownToHtml(markdown, conversationData) {
   }
 
   // Clean up leading newlines and whitespace
-  markdown = markdown.replace(/^\s*\n+/, '').trim();
+  markdown = markdown.replace(/^\s*\n+/, "").trim();
 
   // Store conversation data
   currentConversation = conversationData;
@@ -347,128 +347,147 @@ function getSourceUrlFromReference(reference) {
     }
   }
 
-  async function pollConversationEvents(conversationId, uniqueId, dustWorkspaceId, authorization, baseUrl, metadata) {
+  async function pollConversationEvents(
+    conversationId,
+    uniqueId,
+    dustWorkspaceId,
+    authorization,
+    baseUrl,
+    metadata
+  ) {
     const maxPollingTime = 3 * 60 * 1000; // 3 minutes in milliseconds
     const pollInterval = 1000; // 1 second for faster updates
     const startTime = Date.now();
-    
+
     let lastEventIndex = -1;
     let hasContent = false;
-    let currentContent = '';
+    let currentContent = "";
     let isCompleted = false;
-    
-    const assistantMessageElement = document.getElementById(`assistant-${uniqueId}`);
-    
+
+    const assistantMessageElement = document.getElementById(
+      `assistant-${uniqueId}`
+    );
+
     while (Date.now() - startTime < maxPollingTime && !isCompleted) {
       try {
         const eventsUrl = `${baseUrl}/api/v1/w/${dustWorkspaceId}/assistant/conversations/${conversationId}`;
         const eventsOptions = {
           url: eventsUrl,
-          type: 'GET',
+          type: "GET",
           headers: {
             Authorization: authorization,
           },
           secure: isProd,
         };
-        
+
         const eventsResponse = await client.request(eventsOptions);
-        
-        if (eventsResponse && eventsResponse.conversation && eventsResponse.conversation.content) {
+
+        if (
+          eventsResponse &&
+          eventsResponse.conversation &&
+          eventsResponse.conversation.content
+        ) {
           const messages = eventsResponse.conversation.content;
-          
+
           // Look for assistant messages (index 1 and beyond)
           for (let i = 1; i < messages.length; i++) {
             const messageGroup = messages[i];
             if (Array.isArray(messageGroup) && messageGroup.length > 0) {
               const message = messageGroup[0];
-              
-              if (message.type === 'agent_message') {
+
+              if (message.type === "agent_message") {
                 hasContent = true;
-                const agentName = message.configuration?.name || 'Assistant';
-                
-                // Debug: log the entire message structure
-                console.log('Agent message received:', JSON.stringify(message, null, 2));
-                console.log('Message status:', message.status);
-                
+                const agentName = message.configuration?.name || "Assistant";
+
                 // Extract chain of thought if available
-                const chainOfThought = message.chainOfThought || '';
-                
+                const chainOfThought = message.chainOfThought || "";
+
                 // Function to escape HTML and preserve line breaks
                 function formatChainOfThought(text) {
-                  if (!text || !text.trim()) return '';
-                  
+                  if (!text || !text.trim()) return "";
+
                   // Escape HTML special characters
                   const escaped = text
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-                  
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+
                   return `<div class="chain-of-thought" id="chain-of-thought-${uniqueId}">${escaped}</div>`;
                 }
-                
+
                 // Function to update chain of thought with smooth transition
                 function updateChainOfThought(text, elementId) {
-                  const existingChainOfThought = document.getElementById(`chain-of-thought-${elementId}`);
-                  
+                  const existingChainOfThought = document.getElementById(
+                    `chain-of-thought-${elementId}`
+                  );
+
                   if (!text || !text.trim()) {
                     if (existingChainOfThought) {
-                      existingChainOfThought.classList.add('fade-out');
+                      existingChainOfThought.classList.add("fade-out");
                       setTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
                         }
                       }, 200);
                     }
-                    return '';
+                    return "";
                   }
-                  
+
                   const escaped = text
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-                  
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+
                   if (existingChainOfThought) {
                     // Update existing content
                     existingChainOfThought.innerHTML = escaped;
-                    if (!existingChainOfThought.classList.contains('visible')) {
-                      setTimeout(() => existingChainOfThought.classList.add('visible'), 10);
+                    if (!existingChainOfThought.classList.contains("visible")) {
+                      setTimeout(
+                        () => existingChainOfThought.classList.add("visible"),
+                        10
+                      );
                     }
-                    return ''; // Return empty since element already exists in DOM
+                    return ""; // Return empty since element already exists in DOM
                   } else {
                     // Create new element and return HTML to insert
                     return `<div class="chain-of-thought" id="chain-of-thought-${elementId}">${escaped}</div>`;
                   }
                 }
-                
+
                 const chainOfThoughtHtml = formatChainOfThought(chainOfThought);
-                
+
                 // Debug logging for chain of thought
                 if (chainOfThought && chainOfThought.trim()) {
-                  console.log('Chain of thought found:', chainOfThought);
-                  console.log('Chain of thought HTML:', chainOfThoughtHtml);
+                  console.log("Chain of thought found:", chainOfThought);
+                  console.log("Chain of thought HTML:", chainOfThoughtHtml);
                 } else {
-                  console.log('No chain of thought found or empty');
+                  console.log("No chain of thought found or empty");
                 }
-                
+
                 // Test: force show chain of thought for debugging (remove this after testing)
                 // const testChainOfThought = message.chainOfThought ? formatChainOfThought('• Testing chain of thought display\n• This should appear immediately') : '';
                 // if (message.chainOfThought) {
                 //   console.log('FORCED TEST: Displaying test chain of thought');
                 // }
-                
-                if (message.status === 'succeeded') {
+
+                if (message.status === "succeeded") {
                   // Message is complete - hide chain of thought and show final answer
                   isCompleted = true;
-                  const htmlAnswer = convertMarkdownToHtml(message.content, eventsResponse.conversation);
+                  const htmlAnswer = convertMarkdownToHtml(
+                    message.content,
+                    eventsResponse.conversation
+                  );
                   if (assistantMessageElement) {
                     // Hide any existing chain of thought
-                    const existingChainOfThought = document.getElementById(`chain-of-thought-${uniqueId}`);
+                    const existingChainOfThought = document.getElementById(
+                      `chain-of-thought-${uniqueId}`
+                    );
                     if (existingChainOfThought) {
-                      existingChainOfThought.classList.add('fade-out');
+                      existingChainOfThought.classList.add("fade-out");
                       setTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
@@ -478,34 +497,53 @@ function getSourceUrlFromReference(reference) {
 
                     setTimeout(() => {
                       assistantMessageElement.innerHTML = `
-                        <div class="message-header">
-                          <h4>@${agentName}:</h4>
+                        <h4>@${agentName}:</h4>
+                        <pre class=\"markdown-content\" data-markdown="${message.content.replace(
+                          /"/g,
+                          "&quot;"
+                        )}">${htmlAnswer}</pre>
+                        <div class="action-buttons">
+                          <button class=\"use-button public-reply\" onclick=\"useAnswer(this, 'public')\" title="Use as public reply">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                            </svg>
+                            As reply
+                          </button>
+                          <button class=\"use-button private-note\" onclick=\"useAnswer(this, 'private')\" title="Use as internal note">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM8.9 6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H8.9V6zM18 20H6V10h12v10z"/>
+                            </svg>
+                            As note
+                          </button>
                           <button class="copy-button" onclick="copyMessage(this)" title="Copy message">
-                            <svg viewBox="0 0 24 24">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
                               <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                             </svg>
+                            Copy
                           </button>
                         </div>
-                        <pre class=\"markdown-content\" data-markdown="${message.content.replace(/"/g, '&quot;')}">${htmlAnswer}</pre>
-                        <button class=\"use-button public-reply\" onclick=\"useAnswer(this, 'public')\">Use as public reply</button>
-                        <button class=\"use-button private-note\" onclick=\"useAnswer(this, 'private')\">Use as internal note</button>
                       `;
                     }, 200);
                   }
-                } else if (message.status === 'created' || (message.status === 'running' && !message.content)) {
+                } else if (
+                  message.status === "created" ||
+                  (message.status === "running" && !message.content)
+                ) {
                   // Message is just created or running but no content yet
                   if (assistantMessageElement) {
-                    let chainOfThoughtElement = document.getElementById(`chain-of-thought-${uniqueId}`);
-                    
+                    let chainOfThoughtElement = document.getElementById(
+                      `chain-of-thought-${uniqueId}`
+                    );
+
                     // Handle chain of thought display
                     if (chainOfThought && chainOfThought.trim()) {
                       const escaped = chainOfThought
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-                      
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#39;");
+
                       if (!chainOfThoughtElement) {
                         // Create chain of thought element
                         assistantMessageElement.innerHTML = `
@@ -514,19 +552,22 @@ function getSourceUrlFromReference(reference) {
                           <div class=\"spinner\"></div>
                           <div class=\"generating-status\">Generating response...</div>
                         `;
-                        
+
                         // Trigger animation after DOM update
                         setTimeout(() => {
-                          const element = document.getElementById(`chain-of-thought-${uniqueId}`);
+                          const element = document.getElementById(
+                            `chain-of-thought-${uniqueId}`
+                          );
                           if (element) {
-                            element.classList.add('visible');
+                            element.classList.add("visible");
                           }
                         }, 50);
                       } else {
                         // Update existing chain of thought content
                         chainOfThoughtElement.innerHTML = escaped;
                         // Auto-scroll to bottom of chain of thought
-                        chainOfThoughtElement.scrollTop = chainOfThoughtElement.scrollHeight;
+                        chainOfThoughtElement.scrollTop =
+                          chainOfThoughtElement.scrollHeight;
                       }
                     } else {
                       // No chain of thought - just show spinner
@@ -539,21 +580,26 @@ function getSourceUrlFromReference(reference) {
                       }
                     }
                   }
-                } else if (message.status === 'running' && message.content) {
+                } else if (message.status === "running" && message.content) {
                   // Message is still generating but has partial content
-                  const htmlAnswer = convertMarkdownToHtml(message.content, eventsResponse.conversation);
+                  const htmlAnswer = convertMarkdownToHtml(
+                    message.content,
+                    eventsResponse.conversation
+                  );
                   if (assistantMessageElement) {
-                    let chainOfThoughtElement = document.getElementById(`chain-of-thought-${uniqueId}`);
-                    
+                    let chainOfThoughtElement = document.getElementById(
+                      `chain-of-thought-${uniqueId}`
+                    );
+
                     // Handle chain of thought display
                     if (chainOfThought && chainOfThought.trim()) {
                       const escaped = chainOfThought
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-                      
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#39;");
+
                       if (!chainOfThoughtElement) {
                         // Create chain of thought element
                         assistantMessageElement.innerHTML = `
@@ -563,19 +609,22 @@ function getSourceUrlFromReference(reference) {
                           <div class=\"spinner\"></div>
                           <div class=\"generating-status\">Generating response...</div>
                         `;
-                        
+
                         // Trigger animation after DOM update
                         setTimeout(() => {
-                          const element = document.getElementById(`chain-of-thought-${uniqueId}`);
+                          const element = document.getElementById(
+                            `chain-of-thought-${uniqueId}`
+                          );
                           if (element) {
-                            element.classList.add('visible');
+                            element.classList.add("visible");
                           }
                         }, 50);
                       } else {
                         // Update existing chain of thought content
                         chainOfThoughtElement.innerHTML = escaped;
                         // Auto-scroll to bottom of chain of thought
-                        chainOfThoughtElement.scrollTop = chainOfThoughtElement.scrollHeight;
+                        chainOfThoughtElement.scrollTop =
+                          chainOfThoughtElement.scrollHeight;
                       }
                     } else {
                       // No chain of thought - just show content and spinner
@@ -589,7 +638,7 @@ function getSourceUrlFromReference(reference) {
                       }
                     }
                   }
-                } else if (message.status === 'errored') {
+                } else if (message.status === "errored") {
                   // Message failed
                   isCompleted = true;
                   if (assistantMessageElement) {
@@ -604,19 +653,19 @@ function getSourceUrlFromReference(reference) {
             }
           }
         }
-        
-        document.getElementById('dustResponse').scrollTop = document.getElementById('dustResponse').scrollHeight;
-        
+
+        document.getElementById("dustResponse").scrollTop =
+          document.getElementById("dustResponse").scrollHeight;
+
         if (!isCompleted) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
-        
       } catch (error) {
-        console.error('Error polling conversation events:', error);
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        console.error("Error polling conversation events:", error);
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
       }
     }
-    
+
     // If we timed out, show error message
     if (!isCompleted && Date.now() - startTime >= maxPollingTime) {
       if (assistantMessageElement) {
@@ -626,7 +675,7 @@ function getSourceUrlFromReference(reference) {
         `;
       }
     }
-    
+
     await client.invoke("resize", { width: "100%", height: "600px" });
   }
 
@@ -892,6 +941,12 @@ function getSourceUrlFromReference(reference) {
       }
 
       await client.invoke("ticket.editor.insert", formattedAnswer);
+
+      // Visual feedback
+      button.classList.add("clicked");
+      setTimeout(() => {
+        button.classList.remove("clicked");
+      }, 500);
     } catch (error) {
       console.error(`Error inserting answer as ${type} note:`, error);
     }
@@ -900,7 +955,8 @@ function getSourceUrlFromReference(reference) {
   async function copyMessage(button) {
     try {
       const assistantMessageDiv = button.closest(".assistant-message");
-      const markdownContent = assistantMessageDiv.querySelector(".markdown-content");
+      const markdownContent =
+        assistantMessageDiv.querySelector(".markdown-content");
 
       // Get the original markdown text stored in the data attribute
       const originalMarkdown = markdownContent.dataset.markdown;
@@ -913,20 +969,14 @@ function getSourceUrlFromReference(reference) {
       }
 
       // Visual feedback
-      const icon = button.querySelector('svg');
-      const originalIcon = icon.innerHTML;
+      button.classList.add("clicked");
 
-      // Change to checkmark icon
-      icon.innerHTML = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
-      button.classList.add('copied');
-
-      // Reset after 2 seconds
+      // Reset after 500ms
       setTimeout(() => {
-        icon.innerHTML = originalIcon;
-        button.classList.remove('copied');
-      }, 2000);
+        button.classList.remove("clicked");
+      }, 500);
     } catch (error) {
-      console.error('Error copying message:', error);
+      console.error("Error copying message:", error);
     }
   }
 
