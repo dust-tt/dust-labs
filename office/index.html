@@ -109,6 +109,11 @@
         color: white;
       }
 
+      .power-automate-icon {
+        background: #0078d4;
+        color: white;
+      }
+
       h2 {
         color: #1f2937;
         font-size: 20px;
@@ -255,9 +260,9 @@
             />
           </svg>
         </div>
-        <h1>Office Add-ins</h1>
+        <h1>Microsoft Add-ins</h1>
         <p class="subtitle">
-          Install AI-powered add-ins for Excel and PowerPoint
+          Install AI-powered add-ins for Microsoft Suite
         </p>
       </header>
 
@@ -296,6 +301,23 @@
               class="download-btn"
             >
               Download PowerPoint Manifest
+            </a>
+          </div>
+
+          <div class="addin-card">
+            <div class="addin-header">
+              <div class="addin-icon power-automate-icon">🛠️</div>
+              <h2>Power Automate Connectors</h2>
+            </div>
+            <p class="addin-description">
+              Integrate your flows with Dust to trigger an agent or upload new data sources to your workspace.
+            </p>
+            <a
+              href="power-automate/PowerAutomate_DustAssistantSolution.zip"
+              download="PowerAutomate_DustAssistantSolution.zip"
+              class="download-btn"
+            >
+              Download Power Automate zip file
             </a>
           </div>
         </div>
@@ -337,6 +359,22 @@
             <li>The add-in will be installed</li>
             <li>The add-in will appear in the <code>Home</code> tab ribbon</li>
           </ol>
+
+          <h4>For Power Automate Connectors:</h4>
+          <ol class="steps">
+            <li>
+              Download the Power Automate connectors zip file using the button above
+            </li>
+            <li>
+              Go to the Power Automate portal and go to <code>Solutions</code> →
+              <code>Import the solution</code>
+            </li>
+            <li>
+              Browse and select the downloaded
+              <code>PowerAutomate_DustAssistantSolution.zip</code> file
+            </li>
+          </ol>
+          <p>More info <a href="https://docs.dust.tt/update/docs/power-automate#/" target="_blank">here</a></p>
         </div>
       </div>
     </div>
