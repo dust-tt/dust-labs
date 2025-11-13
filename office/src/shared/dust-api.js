@@ -1,88 +1,155 @@
-// Dust API wrapper that uses the Vercel proxy to avoid CORS issues
+// Dust API wrapper shared across Office add-ins (Excel, PowerPoint)
 
-// Detect which Office app is running
+// Helper function to determine which Office app is running
+/* global Office */
+
+const DUST_API_URL = 'https://dust.tt';
+
 function getOfficeApp() {
-    // Check if we're in an Office context
-    if (typeof Office !== 'undefined' && Office.context && Office.context.host) {
+    if (typeof Office !== "undefined" && Office.context?.host) {
         if (Office.context.host === Office.HostType.Excel) {
-            return 'excel';
-        } else if (Office.context.host === Office.HostType.PowerPoint) {
-            return 'powerpoint';
+            return "excel";
+        }
+        if (Office.context.host === Office.HostType.PowerPoint) {
+            return "powerpoint";
         }
     }
-    
-    // Fallback: check which storage keys exist
-    if (localStorage.getItem('dust_excel_workspaceId')) {
-        return 'excel';
-    } else if (localStorage.getItem('dust_powerpoint_workspaceId')) {
-        return 'powerpoint';
+
+    if (localStorage.getItem("dust_excel_workspaceId")) {
+        return "excel";
     }
-    
-    // Default to excel if unable to determine
-    return 'excel';
+    if (localStorage.getItem("dust_powerpoint_workspaceId")) {
+        return "powerpoint";
+    }
+
+    return "excel";
 }
 
-// Helper function to get from storage based on current Office app
-function getDustStorageValue(key) {
-    const app = getOfficeApp();
-    const storageKey = `dust_${app}_${key}`;
-    return localStorage.getItem(storageKey);
+function getStorageKey(key) {
+    return `dust_${getOfficeApp()}_${key}`;
 }
 
-// Get the proxy URL
-function getProxyUrl() {
-    // Always use relative path - works in both development and production
-    // Vercel automatically handles the /api routes
-    return '/api/dust-proxy';
+function getStorageValue(key) {
+    return localStorage.getItem(getStorageKey(key));
 }
 
-// Helper function to make API calls through the proxy
+function setStorageValue(key, value) {
+    const storageKey = getStorageKey(key);
+    if (value === undefined || value === null || value === "") {
+        localStorage.removeItem(storageKey);
+    } else {
+        localStorage.setItem(storageKey, value);
+    }
+}
+
+function clearTokens() {
+    setStorageValue("accessToken", null);
+    setStorageValue("refreshToken", null);
+}
+
+function getDustApiBaseUrl() {
+    const region = getStorageValue("region");
+    if (!isDevelopmentEnvironment()) {
+        if (region === "europe-west1") {
+            return "https://eu.dust.tt";
+        }
+        if (region === "us-central1") {
+            return "https://dust.tt";
+        }
+    }
+    return DUST_API_URL;
+}
+
+function isDevelopmentEnvironment() {
+    const origin = window.location.origin;
+    return !origin.includes("dust.tt");
+}
+
+function getStoredAccessToken() {
+    return getStorageValue("accessToken");
+}
+
 async function callDustAPI(path, options = {}) {
-    const proxyUrl = getProxyUrl();
-    const region = getDustStorageValue('region');
-    
-    // Build query parameters
-    const params = new URLSearchParams({ path });
-    
-    // Prepare headers
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': options.headers?.Authorization || `Bearer ${getDustStorageValue('dustToken')}`,
-    };
-    
-    if (region) {
-        headers['X-Dust-Region'] = region;
+    const baseUrl = getDustApiBaseUrl();
+    let token = getStoredAccessToken();
+    let hasAttemptedRefresh = false;
+
+    if (!token) {
+        throw new Error("Missing access token. Please reconnect your Dust account.");
     }
-    
-    try {
+
+    const buildHeaders = (accessToken) => ({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        ...(isDevelopmentEnvironment() ? { "ngrok-skip-browser-warning": "true" } : {}),
+        ...options.headers,
+    });
+
+    const execute = async (accessToken) => {
         const fetchOptions = {
-            method: options.method || 'GET',
-            headers: headers,
+            method: options.method || "GET",
+            headers: buildHeaders(accessToken),
             body: options.body ? JSON.stringify(options.body) : undefined,
         };
-        
-        // Add abort signal if provided
+
         if (options.signal) {
             fetchOptions.signal = options.signal;
         }
-        
-        const response = await fetch(proxyUrl + '?' + params.toString(), fetchOptions);
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || `API call failed with status ${response.status}`);
+
+        const normalizedPath =
+            path.startsWith("http://") || path.startsWith("https://")
+                ? path
+                : `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+
+        return fetch(normalizedPath, fetchOptions);
+    };
+
+    let response = await execute(token);
+
+    // If we get a 401, try to refresh the token
+    if (response.status === 401 && !hasAttemptedRefresh) {
+        console.log("[DustAPI] Received 401, attempting to refresh token...");
+        hasAttemptedRefresh = true;
+        const refreshedToken = await window.DustOfficeAuth.tryRefreshAccessToken();
+
+        if (refreshedToken) {
+            token = refreshedToken;
+            console.log("[DustAPI] Token refreshed successfully, retrying request...");
+            response = await execute(token);
+
+            // If we still get 401 after refresh, the refresh token might be invalid
+            if (response.status === 401) {
+                clearTokens();
+                throw new Error("Authentication failed. Please reconnect your Dust account.");
+            }
+        } else {
+            // Refresh failed - clear tokens and throw error
+            clearTokens();
+            throw new Error("Token expired and refresh failed. Please reconnect your Dust account.");
         }
-        
-        return await response.json();
-    } catch (error) {
-        // Don't log abort errors
-        if (error.name !== 'AbortError') {
-            console.error('Dust API call failed:', error);
-        }
-        throw error;
     }
+
+    if (!response.ok) {
+        let error;
+        try {
+            error = await response.json();
+        } catch (jsonError) {
+            error = { error: response.statusText };
+        }
+        throw new Error(error.error || `API call failed with status ${response.status}`);
+    }
+
+    if (response.status === 204) {
+        return null;
+    }
+
+    return response.json();
 }
 
-// Export for use in taskpane.js
-window.callDustAPI = callDustAPI;
 window.getOfficeApp = getOfficeApp;
+window.getStorageValue = getStorageValue;
+window.setStorageValue = setStorageValue;
+window.clearDustTokens = clearTokens;
+window.getDustApiBaseUrl = getDustApiBaseUrl;
+window.isDustDevelopmentEnv = isDevelopmentEnvironment;
+window.callDustAPI = callDustAPI;
