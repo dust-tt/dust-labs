@@ -9,6 +9,10 @@
       "destination": "/src/shared/dust-api.js"
     },
     {
+      "source": "/shared/:path*",
+      "destination": "/src/shared/:path*"
+    },
+    {
       "source": "/excel/:path*",
       "destination": "/src/excel/:path*"
     },
