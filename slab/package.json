@@ -1,0 +1,30 @@
+{
+  "name": "slab-to-dust",
+  "version": "1.0.0",
+  "description": "Sync Slab documents to Dust data sources",
+  "main": "slab-to-dust.ts",
+  "scripts": {
+    "sync": "npx tsx slab-to-dust.ts",
+    "build": "tsc",
+    "dev": "tsx watch slab-to-dust.ts"
+  },
+  "keywords": [
+    "slab",
+    "dust",
+    "api",
+    "sync",
+    "documents"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bottleneck": "^2.19.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.0"
+  }
+}
