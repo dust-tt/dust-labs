@@ -351,35 +351,131 @@
       .chain-of-thought::-webkit-scrollbar-thumb:hover {
         background: #a8a8a8;
       }
+
+      /* Authentication styles */
+      .auth-container {
+        padding: 20px;
+        text-align: center;
+        display: none;
+      }
+
+      .auth-container.show {
+        display: block;
+      }
+
+      .auth-message {
+        margin-bottom: 20px;
+        color: #666;
+        line-height: 1.5;
+      }
+
+      .login-button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
+      }
+
+      .login-button:hover:not(:disabled) {
+        background-color: #0056b3;
+      }
+
+      .login-button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      .auth-error {
+        color: #dc2626;
+        margin-top: 12px;
+        display: none;
+      }
+
+      .auth-loading {
+        display: none;
+        margin: 12px 0;
+      }
+
+      .auth-loading .spinner {
+        width: 20px;
+        height: 20px;
+        border-width: 2px;
+      }
+
+      .logout-link {
+        display: block;
+        text-align: right;
+        font-size: 12px;
+        color: #666;
+        cursor: pointer;
+        text-decoration: underline;
+        padding: 8px 0;
+        margin-bottom: 8px;
+      }
+
+      .logout-link:hover {
+        color: #333;
+      }
+
+      .main-content {
+        display: block;
+      }
+
+      .main-content.hidden {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <div class="app-container">
-      <div id="dustResponse"></div>
-      <div id="assistantSelectWrapper">
-        <div id="loadingSpinner" class="loading-spinner"></div>
-        <select id="assistantSelect" style="width: 100%; display: none">
-          <option value="">Select an assistant</option>
-        </select>
+      <!-- Authentication Section -->
+      <div id="authContainer" class="auth-container">
+        <div class="auth-message">
+          <p>Connect your Dust account to use assistants in Zendesk</p>
+        </div>
+        <button id="loginButton" class="login-button">Login to Dust</button>
+        <div id="authLoading" class="auth-loading">
+          <div class="spinner"></div>
+          <p style="margin-top: 12px; color: #6b7280;">Connecting...</p>
+        </div>
+        <div id="authError" class="auth-error"></div>
       </div>
-      <div id="inputWrapper" style="display: none">
-        <div class="input-container">
-          <textarea
-            id="userInput"
-            rows="3"
-            placeholder="Enter additional context here"
-          ></textarea>
-          <button id="sendToDustButton">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"
-              />
-            </svg>
-          </button>
+
+      <!-- Main Content -->
+      <div id="mainContent" class="main-content">
+        <a id="logoutLink" class="logout-link" style="display: none;">Disconnect from Dust</a>
+        <div id="dustResponse"></div>
+        <div id="assistantSelectWrapper">
+          <div id="loadingSpinner" class="loading-spinner"></div>
+          <select id="assistantSelect" style="width: 100%; display: none">
+            <option value="">Select an assistant</option>
+          </select>
+        </div>
+        <div id="inputWrapper" style="display: none">
+          <div class="input-container">
+            <textarea
+              id="userInput"
+              rows="3"
+              placeholder="Enter additional context here"
+            ></textarea>
+            <button id="sendToDustButton">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
     <script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+    <script src="auth.js"></script>
     <script src="main.js"></script>
   </body>
 </html>
