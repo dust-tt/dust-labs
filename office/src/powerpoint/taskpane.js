@@ -853,16 +853,36 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
 
       try {
-        // Prepare the content for the API
-        const inputContent =
-          (instructions || "Process this text:") +
-          "\n\n" +
-          textBlock.originalText;
+        // Upload the slide content as a file
+        const fileName = `slide_${textBlock.slideIndex + 1}_shape_${textBlock.shapeId}.txt`;
+        const uploadedFile = await uploadFileToDust(
+          textBlock.originalText,
+          fileName,
+          'text/plain',
+          workspaceId
+        );
+
+        // Create content fragment from uploaded file
+        const contentFragments = [
+          {
+            title: fileName,
+            fileId: uploadedFile.sId,
+            url: uploadedFile.publicUrl || null,
+            content: null,
+            contentType: null,
+            nodeId: null,
+            nodeDataSourceViewId: null,
+            context: null,
+          }
+        ];
+
+        // Prepare the message content with just the instructions
+        const messageContent = instructions || "Process this slide:";
 
         // Call Dust API for this text block
         const payload = {
           message: {
-            content: inputContent,
+            content: messageContent,
             mentions: [{ configurationId: assistantId }],
             context: {
               username: "powerpoint",
@@ -873,6 +893,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
               origin: "powerpoint",
             },
           },
+          contentFragments: contentFragments,
           blocking: true,
           title: "PowerPoint Conversation",
           visibility: "unlisted",
@@ -892,7 +913,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         if (processingCancelled) {
           return null;
         }
-        
+
         const messages = result.conversation.content;
         const lastAgentMessage = messages
           .flat()
@@ -901,12 +922,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
         if (lastAgentMessage && lastAgentMessage.content) {
           processedCount++;
-          
+
           // Update status to show progress
           document.getElementById(
             "status"
           ).innerHTML = `<div class="spinner"></div> Processing (${processedCount}/${totalBlocks})...`;
-          
+
           return {
             ...textBlock,
             newText: lastAgentMessage.content
