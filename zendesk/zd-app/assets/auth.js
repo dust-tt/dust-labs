@@ -61,8 +61,13 @@
         return `${baseUrl}/api/v1/auth`;
     }
 
-    function getOAuthRedirectUri() {
-        // Construct redirect URI from current deployment path
+    function getDustBaseUrl() {
+        // Check if DUST_API_URL is defined globally, otherwise use default
+        return typeof DUST_API_URL !== 'undefined' ? DUST_API_URL : 'https://dust.tt';
+    }
+
+    function getZendeskCallbackUrl() {
+        // Construct the actual Zendesk callback URL from current deployment path
         // For Zendesk apps, the path includes a hash that changes on every deploy:
         // /1073173/assets/1765878898-ec18c462b053cebc3858fbb5e43625e1/iframe.html
         const currentPath = window.location.pathname;
@@ -72,11 +77,33 @@
         pathParts[pathParts.length - 1] = 'oauth-callback.html';
 
         const redirectPath = pathParts.join('/');
-        const redirectUri = `${window.location.origin}${redirectPath}`;
+        const callbackUrl = `${window.location.origin}${redirectPath}`;
 
-        console.log('[DustZendeskAuth] Redirect URI:', redirectUri);
+        console.log('[DustZendeskAuth] Zendesk callback URL:', callbackUrl);
+
+        return callbackUrl;
+    }
+
+    function getOAuthRedirectUri() {
+        // Use a stable redirect URI on dust.tt that will proxy back to Zendesk
+        // This avoids the issue of Zendesk's dynamic deployment hashes breaking OAuth
+        const redirectUri = `${getDustBaseUrl()}/api/oauth-zendesk/callback`;
+
+        console.log('[DustZendeskAuth] OAuth redirect URI (stable):', redirectUri);
 
         return redirectUri;
+    }
+
+    function encodeOAuthState(zendeskCallbackUrl) {
+        // Encode the actual Zendesk callback URL in the state parameter
+        // This will be decoded by the dust.tt proxy endpoint to redirect back
+        const stateObj = {
+            callback_url: zendeskCallbackUrl,
+        };
+        const stateJson = JSON.stringify(stateObj);
+        // Base64url encode
+        const base64 = btoa(stateJson);
+        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
     async function tryRefreshAccessToken(requestFunction) {
@@ -146,11 +173,17 @@
         const redirectUri = getOAuthRedirectUri();
         setAuthStorage("oauthRedirectUri", redirectUri);
 
+        // Get the actual Zendesk callback URL and encode it in state
+        const zendeskCallbackUrl = getZendeskCallbackUrl();
+        const state = encodeOAuthState(zendeskCallbackUrl);
+        setAuthStorage("oauthState", state);
+
         const params = new URLSearchParams({
             redirect_uri: redirectUri,
             response_type: "code",
             code_challenge_method: "S256",
             code_challenge: codeChallenge,
+            state: state,
         });
 
         return {
@@ -235,6 +268,7 @@
         oauthCodeBeingExchanged = null;
         clearAuthStorage("oauthCodeVerifier");
         clearAuthStorage("oauthRedirectUri");
+        clearAuthStorage("oauthState");
     }
 
     async function exchangeCodeForToken(code, options = {}) {
@@ -452,6 +486,7 @@
         clearAuthStorage("user");
         clearAuthStorage("oauthCodeVerifier");
         clearAuthStorage("oauthRedirectUri");
+        clearAuthStorage("oauthState");
     }
 
     window.DustZendeskAuth = {
@@ -461,7 +496,9 @@
         pollForOAuthCallback,
         prepareAuthorizationRequest,
         getAuthApiBaseUrl,
+        getDustBaseUrl,
         getOAuthRedirectUri,
+        getZendeskCallbackUrl,
         decodeJwtPayload,
         decodeToken,
         tryRefreshAccessToken,

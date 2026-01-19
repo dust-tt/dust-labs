@@ -1,75 +1,77 @@
 # OAuth Setup for Zendesk App
 
-## Problem: Changing Redirect URIs
+## Solution: Stable Redirect URI via Proxy
 
 Zendesk deploys app assets to paths that include a hash that changes on every deployment:
 ```
-https://yourdomain.zendesk.com/1073173/assets/1765878898-ec18c462b053cebc3858fbb5e43625e1/oauth-callback.html
+https://1073173.apps.zdusercontent.com/1073173/assets/1765878898-ec18c462b053cebc3858fbb5e43625e1/oauth-callback.html
 ```
 
-Where `1765878898-ec18c462b053cebc3858fbb5e43625e1` changes with each deployment.
+Since WorkOS doesn't support wildcard characters in URL paths, we use a stable proxy endpoint on dust.tt to handle the redirect.
 
-**Note:** WorkOS does not support wildcard characters in URL paths (only in subdomains), so the redirect URI must be updated in WorkOS after each deployment.
+### How It Works
 
-## Setup Instructions
+1. The Zendesk app uses a **stable redirect URI**: `https://dust.tt/api/oauth-zendesk/callback`
+2. The actual Zendesk callback URL is encoded in the OAuth `state` parameter
+3. After OAuth completes, WorkOS redirects to the dust.tt proxy endpoint
+4. The proxy decodes the `state` parameter and redirects to the actual Zendesk callback URL with the authorization code
 
-### 1. Deploy the Zendesk App
+This means you only need to configure the redirect URI **once** in WorkOS, and it will work across all deployments.
 
-Deploy your Zendesk app using the standard deployment process.
+## One-Time Setup
 
-### 2. Get the Redirect URI
+### 1. Configure WorkOS
 
-After deployment:
+Add the following redirect URIs to your WorkOS OAuth Application:
+
+**For US region:**
+```
+https://dust.tt/api/oauth-zendesk/callback
+```
+
+**For EU region:**
+```
+https://eu.dust.tt/api/oauth-zendesk/callback
+```
+
+### 2. Deploy the Zendesk App
+
+Deploy your Zendesk app using the standard deployment process. No additional configuration is needed after deployment.
+
+### 3. Test the OAuth Flow
 
 1. Open the app in a Zendesk ticket sidebar
-2. Open browser console (F12 or right-click → Inspect)
-3. Click "Login to Dust"
-4. Look for the log message in console:
-   ```
-   [DustZendeskAuth] Redirect URI: https://yourdomain.zendesk.com/1073173/assets/[hash]/oauth-callback.html
-   ```
-5. Copy this full URL
-
-### 3. Configure WorkOS
-
-1. Go to your WorkOS Dashboard
-2. Navigate to your OAuth Application settings
-3. In the "Redirect URIs" section, add the copied URL exactly as shown
-4. Save the configuration
-
-### 4. Test the OAuth Flow
-
-1. Refresh the Zendesk app
 2. Click "Login to Dust"
 3. Complete the OAuth flow
 4. Authentication should succeed
 
-## After Each Deployment
+## Debugging
 
-After deploying a new version of the app:
+Open browser console (F12) to see OAuth debug messages:
 
-1. Get the new redirect URI from browser console (see step 2 above)
-2. Add the new URI to WorkOS redirect URIs
-3. (Optional) Remove old URIs from previous deployments to keep the list clean
+```
+[DustZendeskAuth] OAuth redirect URI (stable): https://dust.tt/api/oauth-zendesk/callback
+[DustZendeskAuth] Zendesk callback URL: https://1073173.apps.zdusercontent.com/.../oauth-callback.html
+```
+
+The first URL is what's registered in WorkOS (stable).
+The second URL is where the user will be redirected after OAuth (changes per deployment, encoded in state).
 
 ## Troubleshooting
 
 ### OAuth fails with "Invalid redirect URI"
 
-1. Check the browser console for the redirect URI being used:
-   ```
-   [DustZendeskAuth] Redirect URI: https://...
-   ```
+1. Verify the stable redirect URI is registered in WorkOS:
+   - US: `https://dust.tt/api/oauth-zendesk/callback`
+   - EU: `https://eu.dust.tt/api/oauth-zendesk/callback`
 
-2. Verify this exact URI is registered in WorkOS (check for trailing slashes, typos, etc.)
-
-3. If the URI doesn't match, update WorkOS with the correct URI
+2. Check which region the app is using (console logs show which dust.tt URL is being used)
 
 ### Callback page doesn't redirect back
 
-1. Verify `oauth-callback.html` is accessible at the redirect URI
-2. Check browser console for JavaScript errors
-3. Ensure the popup window isn't being blocked by the browser
+1. Check browser console for errors from the proxy endpoint
+2. Verify `oauth-callback.html` exists in the Zendesk app assets
+3. Ensure the popup window isn't being blocked
 
 ### Authentication completes but nothing happens
 
