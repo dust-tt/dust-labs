@@ -1096,26 +1096,56 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
       console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides:`, Array.from(slideIndices));
+      console.log(`[ProcessWithAssistant] Total slides in presentation: ${presentation.slides.items.length}`);
+
+      // Validate all slide indices are within bounds
+      const validSlideIndices = Array.from(slideIndices).filter(idx => {
+        if (idx >= 0 && idx < presentation.slides.items.length) {
+          return true;
+        }
+        console.log(`[ProcessWithAssistant] Slide index ${idx} is out of bounds (0-${presentation.slides.items.length - 1})`);
+        return false;
+      });
+
+      console.log(`[ProcessWithAssistant] Valid slide indices to reload: ${validSlideIndices.length}`);
 
       // Reload all needed slides upfront (to get fresh shape references)
-      for (let slideIndex of slideIndices) {
+      for (let slideIndex of validSlideIndices) {
         const slide = presentation.slides.items[slideIndex];
         slide.shapes.load("items");
       }
       await context.sync();
 
-      // Load all shape IDs on the needed slides
-      for (let slideIndex of slideIndices) {
+      // Load all shape IDs on the needed slides (load IDs first, textFrame separately)
+      for (let slideIndex of validSlideIndices) {
         const slide = presentation.slides.items[slideIndex];
         for (let shape of slide.shapes.items) {
-          shape.load("id,textFrame");
+          shape.load("id");
         }
       }
       await context.sync();
 
+      // Now try to load textFrame (some shapes might not have it)
+      for (let slideIndex of validSlideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        for (let shape of slide.shapes.items) {
+          try {
+            shape.load("textFrame");
+          } catch (e) {
+            console.log(`[ProcessWithAssistant] Could not load textFrame for shape ${shape.id}:`, e.message);
+          }
+        }
+      }
+      try {
+        await context.sync();
+      } catch (e) {
+        console.log(`[ProcessWithAssistant] Some textFrames failed to load:`, e.message);
+        // Continue anyway - we'll check for textFrame existence later
+      }
+
       // Build a fresh ID-to-shape map
       const freshShapeMap = new Map();
-      for (let slideIndex of slideIndices) {
+      for (let slideIndex of validSlideIndices) {
         const slide = presentation.slides.items[slideIndex];
         for (let shape of slide.shapes.items) {
           freshShapeMap.set(shape.id, shape);
