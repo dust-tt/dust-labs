@@ -102,29 +102,24 @@ async function uploadFileToDust(fileContent, fileName, contentType, workspaceId)
 
         const fileInfo = uploadRequestResult.file;
 
-        // Step 2: Upload the actual file through our proxy to avoid CORS issues
-        const token = getDustStorageValue('dustToken');
-        const uploadProxyUrl = '/api/file-upload-proxy';
+        // Step 2: Upload the actual file
+        const formData = new FormData();
+        const blob = new Blob([fileContent], { type: contentType });
+        formData.append('file', blob, fileName);
 
-        const uploadResponse = await fetch(uploadProxyUrl, {
+        const token = getDustStorageValue('dustToken');
+        const uploadResponse = await fetch(fileInfo.uploadUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify({
-                uploadUrl: fileInfo.uploadUrl,
-                fileContent: fileContent,
-                fileName: fileName,
-                contentType: contentType,
-            }),
+            body: formData,
         });
 
         if (!uploadResponse.ok) {
             const errorData = await uploadResponse.json().catch(() => ({}));
             throw new Error(
                 errorData?.error?.message ||
-                errorData?.error ||
                 `Failed to upload file: ${uploadResponse.status}`
             );
         }

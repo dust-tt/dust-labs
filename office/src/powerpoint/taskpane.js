@@ -830,31 +830,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
 
       try {
-        // Upload the slide content as a file
-        const fileName = `slide_${textBlock.slideIndex + 1}_shape_${textBlock.shapeId}.txt`;
-        const uploadedFile = await uploadFileToDust(
-          textBlock.originalText,
-          fileName,
-          'text/plain',
-          workspaceId
-        );
-
-        // Create content fragment from uploaded file
-        const contentFragments = [
-          {
-            title: fileName,
-            fileId: uploadedFile.sId,
-            url: uploadedFile.publicUrl || null,
-            content: null,
-            contentType: null,
-            nodeId: null,
-            nodeDataSourceViewId: null,
-            context: null,
-          }
-        ];
-
-        // Prepare the message content with just the instructions
-        const messageContent = instructions || "Process this slide:";
+        // Prepare the message content with instructions and slide content
+        const messageContent = (instructions || "Process this content:") + "\n\nInput:\n" + textBlock.originalText;
 
         // Call Dust API for this text block
         const payload = {
@@ -870,7 +847,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
               origin: "powerpoint",
             },
           },
-          contentFragments: contentFragments,
           blocking: true,
           title: "PowerPoint Conversation",
           visibility: "unlisted",
