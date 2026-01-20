@@ -1383,17 +1383,144 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
 
     } else if (scope === "presentation") {
-      // Extract text from all slides using helper function
-      document.getElementById("status").innerHTML = `<div class="spinner"></div> Extracting from entire presentation...`;
-      textBlocksToProcess = await extractTextFromAllSlides(context);
+      // For presentation scope, we'll process slide by slide outside this PowerPoint.run
+      // Just get the total slide count here
+      const presentation = context.presentation;
+      presentation.slides.load("items");
+      await context.sync();
 
-      if (textBlocksToProcess.length > 0) {
-        document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing ${textBlocksToProcess.length} text blocks...`;
-      }
+      const totalSlides = presentation.slides.items.length;
+      console.log(`[ProcessWithAssistant] Presentation has ${totalSlides} slides - will process slide by slide`);
+
+      // Store slide count for use outside this context
+      textBlocksToProcess = { isPresentationScope: true, totalSlides: totalSlides };
     }
 
-    // Check if we have text blocks to process
-    if (textBlocksToProcess.length === 0) {
+    // Handle presentation scope - process slide by slide
+    if (textBlocksToProcess && textBlocksToProcess.isPresentationScope) {
+      const totalSlides = textBlocksToProcess.totalSlides;
+      console.log(`[ProcessWithAssistant] Starting slide-by-slide processing for ${totalSlides} slides`);
+
+      // We'll process slides outside this PowerPoint.run context
+      // Store the info we need and exit
+      textBlocksToProcess = null;
+
+      // Process each slide one by one
+      let totalUpdated = 0;
+      let totalFailed = 0;
+
+      for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
+        if (processingCancelled) {
+          document.getElementById("status").innerHTML = "Processing cancelled";
+          return;
+        }
+
+        document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing slide ${slideIndex + 1} of ${totalSlides}...`;
+
+        try {
+          // Extract text from this slide
+          let slideTextBlocks = [];
+          await PowerPoint.run(async (ctx) => {
+            slideTextBlocks = await extractTextFromSlideShapes(ctx, slideIndex);
+          });
+
+          if (slideTextBlocks.length === 0) {
+            console.log(`[ProcessWithAssistant] Slide ${slideIndex + 1} has no text blocks, skipping`);
+            continue;
+          }
+
+          console.log(`[ProcessWithAssistant] Slide ${slideIndex + 1} has ${slideTextBlocks.length} text blocks`);
+          document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing slide ${slideIndex + 1} of ${totalSlides} (${slideTextBlocks.length} text blocks)...`;
+
+          // Process text blocks for this slide
+          const slideResults = [];
+          for (let i = 0; i < slideTextBlocks.length; i += MAX_CONCURRENT) {
+            if (processingCancelled) {
+              document.getElementById("status").innerHTML = "Processing cancelled";
+              return;
+            }
+
+            const batch = slideTextBlocks.slice(i, Math.min(i + MAX_CONCURRENT, slideTextBlocks.length));
+            const batchPromises = batch.map(async (textBlock) => {
+              if (processingCancelled) return null;
+
+              try {
+                const messageContent = (instructions || "Process this content:") + "\n\nInput:\n" + textBlock.originalText;
+                const payload = {
+                  message: {
+                    content: messageContent,
+                    mentions: [{ configurationId: assistantId }],
+                    context: {
+                      username: "powerpoint",
+                      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                      fullName: "PowerPoint User",
+                      email: "powerpoint@dust.tt",
+                      profilePictureUrl: "",
+                      origin: "powerpoint",
+                    },
+                  },
+                  blocking: true,
+                  title: "PowerPoint Conversation",
+                  visibility: "unlisted",
+                  skipToolsValidation: true,
+                };
+
+                const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+                const result = await callDustAPI(apiPath, {
+                  method: "POST",
+                  body: payload,
+                  headers: { Authorization: "Bearer " + token },
+                });
+
+                if (processingCancelled) return null;
+
+                const messages = result.conversation.content;
+                const lastAgentMessage = messages.flat().reverse().find((msg) => msg.type === "agent_message");
+
+                if (lastAgentMessage && lastAgentMessage.content) {
+                  return { ...textBlock, newText: lastAgentMessage.content };
+                }
+                return null;
+              } catch (error) {
+                console.error(`Error processing text block: ${error.message}`);
+                return null;
+              }
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            slideResults.push(...batchResults.filter(r => r !== null));
+          }
+
+          // Update shapes for this slide
+          if (slideResults.length > 0 && !processingCancelled) {
+            document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating slide ${slideIndex + 1} of ${totalSlides}...`;
+
+            await PowerPoint.run(async (ctx) => {
+              const { updatedCount, failedCount } = await updateShapes(ctx, slideResults);
+              totalUpdated += updatedCount;
+              totalFailed += failedCount;
+            });
+          }
+
+        } catch (slideError) {
+          console.error(`[ProcessWithAssistant] Error processing slide ${slideIndex + 1}:`, slideError);
+          totalFailed++;
+        }
+      }
+
+      // Show final status for presentation scope
+      if (totalUpdated > 0) {
+        document.getElementById("status").innerHTML = `✅ Successfully updated ${totalUpdated} text block(s) across ${totalSlides} slides${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`;
+      } else {
+        document.getElementById("status").innerHTML = `❌ No text blocks were updated`;
+      }
+
+      console.log('[ProcessWithAssistant] Presentation processing complete');
+      return; // Exit early for presentation scope
+    }
+
+    // Check if we have text blocks to process (for selection and slide scopes)
+    if (!textBlocksToProcess || textBlocksToProcess.length === 0) {
       console.log('[ProcessWithAssistant] No text blocks found to process');
       document.getElementById("status").innerHTML = `
         <div style="color: #f59e0b; padding: 10px; background: #fef3c7; border-radius: 4px; font-size: 12px;">
@@ -1510,16 +1637,16 @@ async function processWithAssistant(assistantId, instructions, scope) {
         document.getElementById("status").innerHTML = "Processing cancelled";
         return;
       }
-      
+
       // Process batch of MAX_CONCURRENT items in parallel
       const batch = textBlocksToProcess.slice(i, Math.min(i + MAX_CONCURRENT, textBlocksToProcess.length));
       const batchPromises = batch.map((block, idx) => processTextBlock(block, i + idx));
       const batchResults = await Promise.all(batchPromises);
-      
+
       // Add non-null results
       results.push(...batchResults.filter(r => r !== null));
     }
-    
+
     processedResults = results;
 
     console.log(`[ProcessWithAssistant] Processing complete. Results: ${processedResults.length}`);
@@ -1553,8 +1680,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
     document.getElementById("status").innerHTML = errorHtml;
     throw contextError;
   }
-  
-  // Now apply all the results back to PowerPoint
+
+  // Now apply all the results back to PowerPoint (for selection and slide scopes)
   if (processedResults.length > 0 && !processingCancelled) {
     console.log(`[ProcessWithAssistant] Applying ${processedResults.length} processed results`);
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
@@ -1592,7 +1719,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
   } else {
     console.log('[ProcessWithAssistant] Processing was cancelled');
   }
-  
+
   console.log('[ProcessWithAssistant] Process completed successfully');
 }
 
@@ -1603,19 +1730,34 @@ function updateProgressDisplay() {
   }
 }
 
-// Count text blocks in presentation with progress updates
+// Count text blocks in presentation with progress updates (slide by slide)
 async function countPresentationTextBlocks() {
   // Update status before entering PowerPoint.run
-  document.getElementById("status").innerHTML = '<div class="spinner"></div> Loading presentation...';
+  document.getElementById("status").innerHTML = '<div class="spinner"></div> Counting slides...';
 
-  return await PowerPoint.run(async (context) => {
-    // Use the reliable extraction function
-    const textBlocks = await extractTextFromAllSlides(context);
-    const textBlockCount = textBlocks.length;
+  let totalTextBlocks = 0;
+  let totalSlides = 0;
 
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${textBlockCount} text blocks`;
-    return textBlockCount;
+  // First get the slide count
+  await PowerPoint.run(async (context) => {
+    const presentation = context.presentation;
+    presentation.slides.load("items");
+    await context.sync();
+    totalSlides = presentation.slides.items.length;
   });
+
+  // Count text blocks slide by slide
+  for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
+    document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning slide ${slideIndex + 1} of ${totalSlides}...`;
+
+    await PowerPoint.run(async (context) => {
+      const slideBlocks = await extractTextFromSlideShapes(context, slideIndex);
+      totalTextBlocks += slideBlocks.length;
+    });
+  }
+
+  document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${totalTextBlocks} text blocks across ${totalSlides} slides`;
+  return totalTextBlocks;
 }
 
 // Show confirmation dialog
