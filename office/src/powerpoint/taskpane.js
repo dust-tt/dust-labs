@@ -302,13 +302,8 @@ async function loadAssistants() {
   }
 }
 
-// ====================================================================
-// EXTRACTION HELPER FUNCTIONS
-// ====================================================================
-
-// Extract text from currently selected shapes (for "selection" scope)
+// Extract text from selected shapes
 async function extractTextFromSelectedShapes(context) {
-  console.log('[Extract] Getting selected shapes');
   const selectedShapes = context.presentation.getSelectedShapes();
   selectedShapes.load("items");
   await context.sync();
@@ -317,15 +312,13 @@ async function extractTextFromSelectedShapes(context) {
     throw new Error("No shapes selected");
   }
 
-  // Load shape IDs
   for (let shape of selectedShapes.items) {
     shape.load("id");
   }
   await context.sync();
 
-  // Use getParentSlide to get the actual slide ID
-  const selectedShape = selectedShapes.items[0];
-  const parentSlide = selectedShape.getParentSlideOrNullObject();
+  // Get slide info from first selected shape
+  const parentSlide = selectedShapes.items[0].getParentSlideOrNullObject();
   parentSlide.load("id");
   await context.sync();
 
@@ -334,8 +327,6 @@ async function extractTextFromSelectedShapes(context) {
   }
 
   const slideId = parentSlide.id;
-
-  // Find the slide index
   const presentation = context.presentation;
   presentation.slides.load("items");
   await context.sync();
@@ -345,37 +336,20 @@ async function extractTextFromSelectedShapes(context) {
   }
   await context.sync();
 
-  let slideIndex = -1;
-  for (let i = 0; i < presentation.slides.items.length; i++) {
-    if (presentation.slides.items[i].id === slideId) {
-      slideIndex = i;
-      break;
-    }
-  }
-
+  let slideIndex = presentation.slides.items.findIndex(s => s.id === slideId);
   if (slideIndex === -1) {
     throw new Error("Could not determine slide index");
   }
 
-  console.log(`[Extract] Found ${selectedShapes.items.length} selected shapes on slide ${slideIndex + 1}`);
-
-  // Extract text from each selected shape
   const textBlocks = [];
   for (let shape of selectedShapes.items) {
     try {
-      // First check if this is a group
       shape.load("type");
       await context.sync();
 
-      const shapeType = shape.type;
-      console.log(`[Extract] Checking selected shape (ID: ${shape.id}, Type: ${shapeType})`);
-
-      // Handle grouped shapes - use ShapeGroup API (PowerPointApi 1.8+)
-      if (shapeType === "Group" || shapeType === PowerPoint.ShapeType.group) {
-        console.log(`[Extract]   Shape ${shape.id} is a group - accessing shapes via shape.group.shapes`);
-
+      // Handle grouped shapes using ShapeGroup API (PowerPointApi 1.8+)
+      if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
         try {
-          // Use the ShapeGroup API
           shape.load("group");
           await context.sync();
 
@@ -387,109 +361,66 @@ async function extractTextFromSelectedShapes(context) {
               shape.group.shapes.load("items");
               await context.sync();
 
-              const groupedShapes = shape.group.shapes.items;
-              console.log(`[Extract]   Group has ${groupedShapes.length} shapes inside`);
-
-              for (let j = 0; j < groupedShapes.length; j++) {
-                const groupedShape = groupedShapes[j];
-                try {
-                  groupedShape.load("id, type");
-                  await context.sync();
-
-                  console.log(`[Extract]   Processing grouped shape ${j + 1}/${groupedShapes.length} (ID: ${groupedShape.id}, Type: ${groupedShape.type})`);
-
-                  if (groupedShape.type === "Group" || groupedShape.type === PowerPoint.ShapeType.group) {
-                    console.log(`[Extract]   Skipping nested group ${groupedShape.id}`);
-                    continue;
-                  }
-
-                  groupedShape.load("textFrame");
-                  await context.sync();
-
-                  if (groupedShape.textFrame) {
-                    groupedShape.textFrame.load("hasText");
-                    await context.sync();
-
-                    if (groupedShape.textFrame.hasText) {
-                      groupedShape.textFrame.load("textRange");
-                      await context.sync();
-
-                      if (groupedShape.textFrame.textRange) {
-                        groupedShape.textFrame.textRange.load("text");
-                        await context.sync();
-
-                        const text = groupedShape.textFrame.textRange.text?.trim();
-                        if (text) {
-                          console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                          textBlocks.push({
-                            slideIndex,
-                            slideId,
-                            shapeId: groupedShape.id,
-                            originalText: text,
-                            isSelection: true,
-                            isGroupedShape: true,
-                            parentGroupId: shape.id
-                          });
-                        }
-                      }
-                    }
-                  }
-                } catch (groupedShapeError) {
-                  console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupedShapeError.message}`);
-                }
+              for (const groupedShape of shape.group.shapes.items) {
+                const extracted = await extractTextFromShape(context, groupedShape, slideIndex, slideId, true, shape.id);
+                if (extracted) textBlocks.push({ ...extracted, isSelection: true });
               }
             }
-          } else {
-            console.log(`[Extract]   shape.group is null - API may not be available`);
           }
-        } catch (groupError) {
-          console.log(`[Extract]   Error accessing group shapes: ${groupError.message}`);
-        }
-        continue; // Skip to next shape
+        } catch (e) { /* Group API not available */ }
+        continue;
       }
 
-      // Not a group - extract text normally
-      shape.load("textFrame");
-      await context.sync();
-
-      if (!shape.textFrame) continue;
-
-      shape.textFrame.load("hasText");
-      await context.sync();
-
-      if (!shape.textFrame.hasText) continue;
-
-      shape.textFrame.load("textRange");
-      await context.sync();
-
-      if (!shape.textFrame.textRange) continue;
-
-      shape.textFrame.textRange.load("text");
-      await context.sync();
-
-      const text = shape.textFrame.textRange.text?.trim();
-      if (text) {
-        textBlocks.push({
-          slideIndex,
-          slideId,
-          shapeId: shape.id,
-          originalText: text,
-          isSelection: true
-        });
-      }
-    } catch (e) {
-      console.log(`[Extract] Shape ${shape.id} doesn't support text: ${e.message}`);
-    }
+      // Regular shape
+      const extracted = await extractTextFromShape(context, shape, slideIndex, slideId, false, null);
+      if (extracted) textBlocks.push({ ...extracted, isSelection: true });
+    } catch (e) { /* Shape doesn't support text */ }
   }
 
-  console.log(`[Extract] Extracted ${textBlocks.length} text blocks from selected shapes`);
   return textBlocks;
 }
 
-// Extract text from all shapes on a specific slide (for "slide" scope)
-async function extractTextFromSlideShapes(context, slideIndex) {
-  console.log(`[Extract] Extracting text from slide ${slideIndex + 1}`);
+// Helper to extract text from a single shape
+async function extractTextFromShape(context, shape, slideIndex, slideId, isGroupedShape, parentGroupId) {
+  try {
+    shape.load("id, type");
+    await context.sync();
 
+    if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) return null;
+
+    shape.load("textFrame");
+    await context.sync();
+    if (!shape.textFrame) return null;
+
+    shape.textFrame.load("hasText");
+    await context.sync();
+    if (!shape.textFrame.hasText) return null;
+
+    shape.textFrame.load("textRange");
+    await context.sync();
+    if (!shape.textFrame.textRange) return null;
+
+    shape.textFrame.textRange.load("text");
+    await context.sync();
+
+    const text = shape.textFrame.textRange.text?.trim();
+    if (!text) return null;
+
+    return {
+      slideIndex,
+      slideId,
+      shapeId: shape.id,
+      originalText: text,
+      isGroupedShape,
+      parentGroupId
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Extract text from all shapes on a specific slide
+async function extractTextFromSlideShapes(context, slideIndex) {
   const presentation = context.presentation;
   presentation.slides.load("items");
   await context.sync();
@@ -504,33 +435,20 @@ async function extractTextFromSlideShapes(context, slideIndex) {
   await context.sync();
 
   const slideId = slide.id;
-  console.log(`[Extract] Found ${slide.shapes.items.length} shapes on slide (ID: ${slideId})`);
-
-  // Extract text from each shape individually
   const textBlocks = [];
-  for (let i = 0; i < slide.shapes.items.length; i++) {
-    const shape = slide.shapes.items[i];
 
+  for (const shape of slide.shapes.items) {
     try {
-      shape.load("id,type");
+      shape.load("id, type");
       await context.sync();
 
-      const shapeId = shape.id;
-      const shapeType = shape.type;
-      console.log(`[Extract] Checking shape ${i + 1}/${slide.shapes.items.length} (ID: ${shapeId}, Type: ${shapeType})`);
-
-      // Check if this is a group - if so, we need to extract from grouped shapes
-      if (shapeType === "Group" || shapeType === PowerPoint.ShapeType.group) {
-        console.log(`[Extract]   Shape ${shapeId} is a group - accessing shapes via shape.group.shapes (API 1.8+)`);
-
+      // Handle grouped shapes using ShapeGroup API (PowerPointApi 1.8+)
+      if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
         try {
-          // Use the ShapeGroup API (PowerPointApi 1.8+)
-          // Access the group property which returns a ShapeGroup object
           shape.load("group");
           await context.sync();
 
           if (shape.group) {
-            // Load the shapes collection from the group
             shape.group.load("shapes");
             await context.sync();
 
@@ -538,198 +456,29 @@ async function extractTextFromSlideShapes(context, slideIndex) {
               shape.group.shapes.load("items");
               await context.sync();
 
-              const groupedShapes = shape.group.shapes.items;
-              console.log(`[Extract]   Group has ${groupedShapes.length} shapes inside`);
-
-              // Extract text from each shape in the group
-              for (let j = 0; j < groupedShapes.length; j++) {
-                const groupedShape = groupedShapes[j];
-                try {
-                  groupedShape.load("id, type");
-                  await context.sync();
-
-                  console.log(`[Extract]   Processing grouped shape ${j + 1}/${groupedShapes.length} (ID: ${groupedShape.id}, Type: ${groupedShape.type})`);
-
-                  // Skip if it's a nested group (could recurse, but keeping simple for now)
-                  if (groupedShape.type === "Group" || groupedShape.type === PowerPoint.ShapeType.group) {
-                    console.log(`[Extract]   Skipping nested group ${groupedShape.id}`);
-                    continue;
-                  }
-
-                  groupedShape.load("textFrame");
-                  await context.sync();
-
-                  if (groupedShape.textFrame) {
-                    groupedShape.textFrame.load("hasText");
-                    await context.sync();
-
-                    if (groupedShape.textFrame.hasText) {
-                      groupedShape.textFrame.load("textRange");
-                      await context.sync();
-
-                      if (groupedShape.textFrame.textRange) {
-                        groupedShape.textFrame.textRange.load("text");
-                        await context.sync();
-
-                        const text = groupedShape.textFrame.textRange.text?.trim();
-                        if (text) {
-                          console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                          textBlocks.push({
-                            slideIndex,
-                            slideId,
-                            shapeId: groupedShape.id,
-                            originalText: text,
-                            isSlideScope: true,
-                            isGroupedShape: true,
-                            parentGroupId: shapeId
-                          });
-                        }
-                      }
-                    } else {
-                      console.log(`[Extract]   Grouped shape ${groupedShape.id} hasText=false`);
-                    }
-                  } else {
-                    console.log(`[Extract]   Grouped shape ${groupedShape.id} has no textFrame`);
-                  }
-                } catch (groupedShapeError) {
-                  console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupedShapeError.message}`);
-                }
-              }
-            } else {
-              console.log(`[Extract]   shape.group.shapes is null/undefined`);
-            }
-          } else {
-            console.log(`[Extract]   shape.group is null/undefined - API may not be available`);
-          }
-        } catch (groupError) {
-          console.log(`[Extract]   Error accessing group shapes: ${groupError.message}`);
-          // Fallback: try to extract text directly from the group shape itself
-          try {
-            shape.load("textFrame");
-            await context.sync();
-
-            if (shape.textFrame) {
-              shape.textFrame.load("hasText");
-              await context.sync();
-
-              if (shape.textFrame.hasText) {
-                shape.textFrame.load("textRange");
-                await context.sync();
-
-                if (shape.textFrame.textRange) {
-                  shape.textFrame.textRange.load("text");
-                  await context.sync();
-
-                  const text = shape.textFrame.textRange.text?.trim();
-                  if (text) {
-                    console.log(`[Extract]   ✓ Group shape ${shapeId} fallback - direct text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                    textBlocks.push({
-                      slideIndex,
-                      slideId,
-                      shapeId,
-                      originalText: text,
-                      isSlideScope: true,
-                      isGroupShape: true
-                    });
-                  }
-                }
+              for (const groupedShape of shape.group.shapes.items) {
+                const extracted = await extractTextFromShape(context, groupedShape, slideIndex, slideId, true, shape.id);
+                if (extracted) textBlocks.push({ ...extracted, isSlideScope: true });
               }
             }
-          } catch (fallbackError) {
-            console.log(`[Extract]   Fallback also failed: ${fallbackError.message}`);
           }
-        }
-
-        continue; // Skip to next shape
-      }
-
-      // Not a group - extract text normally
-      shape.load("textFrame");
-      await context.sync();
-
-      if (!shape.textFrame) {
-        console.log(`[Extract]   Shape ${shapeId} has no textFrame - skipping`);
+        } catch (e) { /* Group API not available */ }
         continue;
       }
 
-      shape.textFrame.load("hasText");
-      await context.sync();
-
-      if (!shape.textFrame.hasText) {
-        console.log(`[Extract]   Shape ${shapeId} hasText=false - skipping`);
-        continue;
-      }
-
-      shape.textFrame.load("textRange");
-      await context.sync();
-
-      if (!shape.textFrame.textRange) {
-        console.log(`[Extract]   Shape ${shapeId} has no textRange - skipping`);
-        continue;
-      }
-
-      shape.textFrame.textRange.load("text");
-      await context.sync();
-
-      const text = shape.textFrame.textRange.text?.trim();
-      if (text) {
-        console.log(`[Extract]   ✓ Shape ${shapeId} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-        textBlocks.push({
-          slideIndex,
-          slideId,
-          shapeId,
-          originalText: text,
-          isSlideScope: true
-        });
-      } else {
-        console.log(`[Extract]   Shape ${shapeId} has empty text - skipping`);
-      }
-    } catch (e) {
-      console.log(`[Extract]   Shape ${i + 1} threw error: ${e.message} - skipping`);
-    }
+      // Regular shape
+      const extracted = await extractTextFromShape(context, shape, slideIndex, slideId, false, null);
+      if (extracted) textBlocks.push({ ...extracted, isSlideScope: true });
+    } catch (e) { /* Shape doesn't support text */ }
   }
 
-  console.log(`[Extract] Extracted ${textBlocks.length} text blocks from slide ${slideIndex + 1}`);
   return textBlocks;
 }
-
-// Extract text from all slides (for "presentation" scope)
-async function extractTextFromAllSlides(context) {
-  console.log('[Extract] Extracting text from entire presentation');
-
-  const presentation = context.presentation;
-  presentation.slides.load("items");
-  await context.sync();
-
-  const totalSlides = presentation.slides.items.length;
-  console.log(`[Extract] Found ${totalSlides} slides`);
-
-  // Extract text from each slide using extractTextFromSlideShapes
-  const allTextBlocks = [];
-  for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
-    const slideBlocks = await extractTextFromSlideShapes(context, slideIndex);
-    allTextBlocks.push(...slideBlocks);
-  }
-
-  console.log(`[Extract] Extracted ${allTextBlocks.length} text blocks from ${totalSlides} slides`);
-  return allTextBlocks;
-}
-
-// ====================================================================
-// UPDATE HELPER FUNCTION
-// ====================================================================
-
 // Update shapes with new text
 async function updateShapes(context, updates) {
-  console.log(`[Update] Updating ${updates.length} shapes`);
-
-  // Check if all updates are for selected shapes
   const hasSelectionScope = updates.some(u => u.isSelection);
 
   if (hasSelectionScope) {
-    // Use getSelectedShapes() for fresh references
-    console.log('[Update] Using selection scope - getting selected shapes again');
-
     const selectedShapes = context.presentation.getSelectedShapes();
     selectedShapes.load("items");
     await context.sync();
@@ -739,52 +488,38 @@ async function updateShapes(context, updates) {
     }
     await context.sync();
 
-    console.log(`[Update] Got ${selectedShapes.items.length} selected shapes`);
-
     // Build a map of all selected shapes including those inside groups
     const shapesMap = new Map();
     for (let shape of selectedShapes.items) {
       shapesMap.set(shape.id, shape);
 
-      // Check if this is a group and load shapes inside it
       if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
-        console.log(`[Update] Shape ${shape.id} is a group - loading shapes inside`);
         try {
           shape.load("group");
           await context.sync();
-
           if (shape.group) {
             shape.group.load("shapes");
             await context.sync();
-
             if (shape.group.shapes) {
               shape.group.shapes.load("items");
               await context.sync();
-
               for (let groupedShape of shape.group.shapes.items) {
                 groupedShape.load("id");
                 await context.sync();
-                console.log(`[Update] Added grouped shape ${groupedShape.id} to map`);
                 shapesMap.set(groupedShape.id, groupedShape);
               }
             }
           }
-        } catch (e) {
-          console.log(`[Update] Error loading group shapes for ${shape.id}: ${e.message}`);
-        }
+        } catch (e) { /* Group API not available */ }
       }
     }
-
-    console.log(`[Update] Total shapes in map (including grouped): ${shapesMap.size}`);
 
     let updatedCount = 0;
     let failedCount = 0;
 
     for (let update of updates) {
       const freshShape = shapesMap.get(update.shapeId);
-
       if (!freshShape) {
-        console.log(`[Update] Shape ${update.shapeId} not in current selection or groups`);
         failedCount++;
         continue;
       }
@@ -792,40 +527,30 @@ async function updateShapes(context, updates) {
       try {
         freshShape.load("textFrame");
         await context.sync();
-
         if (!freshShape.textFrame) {
-          console.log(`[Update] Shape ${update.shapeId} has no textFrame`);
           failedCount++;
           continue;
         }
 
         freshShape.textFrame.load("textRange");
         await context.sync();
-
         if (!freshShape.textFrame.textRange) {
-          console.log(`[Update] Shape ${update.shapeId} has no textRange`);
           failedCount++;
           continue;
         }
 
-        const newText = update.newText.trim();
-        console.log(`[Update] Updating shape ${update.shapeId}: "${newText.substring(0, 30)}..."`);
-        freshShape.textFrame.textRange.text = newText;
+        freshShape.textFrame.textRange.text = update.newText.trim();
         await context.sync();
-
         updatedCount++;
       } catch (e) {
-        console.error(`[Update] Error updating shape ${update.shapeId}: ${e.message}`);
+        console.error(`Error updating shape ${update.shapeId}:`, e.message);
         failedCount++;
       }
     }
 
-    console.log(`[Update] Complete. Updated: ${updatedCount}, Failed: ${failedCount}`);
     return { updatedCount, failedCount };
   } else {
     // For slide/presentation scope, update shapes by reloading slides
-    console.log('[Update] Using slide scope - reloading slides to update shapes');
-
     const presentation = context.presentation;
     presentation.slides.load("items");
     await context.sync();
@@ -844,18 +569,14 @@ async function updateShapes(context, updates) {
       updatesBySlide.get(update.slideIndex).push(update);
     }
 
-    console.log(`[Update] Grouped updates across ${updatesBySlide.size} slides`);
-
     let updatedCount = 0;
     let failedCount = 0;
 
-    // Update each slide
     for (let [slideIndex, slideUpdates] of updatesBySlide) {
       const slide = presentation.slides.items[slideIndex];
       slide.shapes.load("items");
       await context.sync();
 
-      // Load all shape IDs and types on this slide
       for (let shape of slide.shapes.items) {
         shape.load("id, type");
       }
@@ -866,43 +587,30 @@ async function updateShapes(context, updates) {
       for (let shape of slide.shapes.items) {
         shapesMap.set(shape.id, shape);
 
-        // Check if this is a group and load shapes inside it
         if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
-          console.log(`[Update] Shape ${shape.id} on slide ${slideIndex + 1} is a group - loading shapes inside`);
           try {
             shape.load("group");
             await context.sync();
-
             if (shape.group) {
               shape.group.load("shapes");
               await context.sync();
-
               if (shape.group.shapes) {
                 shape.group.shapes.load("items");
                 await context.sync();
-
                 for (let groupedShape of shape.group.shapes.items) {
                   groupedShape.load("id");
                   await context.sync();
-                  console.log(`[Update] Added grouped shape ${groupedShape.id} to map`);
                   shapesMap.set(groupedShape.id, groupedShape);
                 }
               }
             }
-          } catch (e) {
-            console.log(`[Update] Error loading group shapes for ${shape.id}: ${e.message}`);
-          }
+          } catch (e) { /* Group API not available */ }
         }
       }
 
-      console.log(`[Update] Slide ${slideIndex + 1} has ${shapesMap.size} shapes (including grouped)`);
-
-      // Update each shape
       for (let update of slideUpdates) {
         const shape = shapesMap.get(update.shapeId);
-
         if (!shape) {
-          console.log(`[Update] Shape ${update.shapeId} not found on slide ${slideIndex + 1}`);
           failedCount++;
           continue;
         }
@@ -910,248 +618,30 @@ async function updateShapes(context, updates) {
         try {
           shape.load("textFrame");
           await context.sync();
-
           if (!shape.textFrame) {
-            console.log(`[Update] Shape ${update.shapeId} has no textFrame`);
             failedCount++;
             continue;
           }
 
           shape.textFrame.load("textRange");
           await context.sync();
-
           if (!shape.textFrame.textRange) {
-            console.log(`[Update] Shape ${update.shapeId} has no textRange`);
             failedCount++;
             continue;
           }
 
-          const newText = update.newText.trim();
-          console.log(`[Update] Updating shape ${update.shapeId} on slide ${slideIndex + 1}`);
-          shape.textFrame.textRange.text = newText;
+          shape.textFrame.textRange.text = update.newText.trim();
           await context.sync();
-
           updatedCount++;
         } catch (e) {
-          console.error(`[Update] Error updating shape ${update.shapeId}: ${e.message}`);
+          console.error(`Error updating shape ${update.shapeId}:`, e.message);
           failedCount++;
         }
       }
     }
 
-    console.log(`[Update] Complete. Updated: ${updatedCount}, Failed: ${failedCount}`);
     return { updatedCount, failedCount };
   }
-}
-
-// ====================================================================
-// LEGACY HELPER FUNCTION (kept for backward compatibility)
-// ====================================================================
-
-// Helper function to safely extract text from shapes
-// Returns an array of objects with slideIndex, shapeId, and originalText
-async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) {
-  const textBlocks = [];
-
-  if (!shapes || shapes.length === 0) {
-    return textBlocks;
-  }
-
-  console.log(`[safeExtractText] Processing ${shapes.length} shapes`);
-
-  // Log what we're receiving
-  console.log('[safeExtractText] Input shapes:', shapes.map(s => ({
-    slideIndex: s.slideIndex,
-    slideId: s.slideId,
-    shapeInfo: s.shape ? 'shape object present' : 'NO SHAPE'
-  })));
-  
-  // First, load all shape types and IDs in one batch
-  for (let item of shapes) {
-    try {
-      item.shape.load("type,id,name");
-    } catch (e) {
-      console.log(`[safeExtractText] Error loading shape properties: ${e.message}`);
-    }
-  }
-  await context.sync();
-
-  // Log what IDs we actually loaded
-  console.log('[safeExtractText] After loading, shape IDs are:', shapes.map(s => {
-    try {
-      return { id: s.shape.id, slideIndex: s.slideIndex, slideId: s.slideId };
-    } catch (e) {
-      return { error: e.message };
-    }
-  }));
-  
-  // Identify text-capable shapes
-  const textCapableShapes = [];
-  for (let item of shapes) {
-    try {
-      const shapeType = item.shape.type;
-      const shapeName = item.shape.name || "";
-      
-      // Be more inclusive about what might have text
-      // Some shapes report as undefined or other types but still have text
-      const isLikelyTextCapable = 
-        shapeType === "GeometricShape" || 
-        shapeType === "TextBox" || 
-        shapeType === "Placeholder" ||
-        shapeType === "Group" ||
-        shapeType === "Rectangle" ||
-        shapeType === "RoundRectangle" ||
-        shapeName.toLowerCase().includes("text") ||
-        shapeName.toLowerCase().includes("title") ||
-        shapeName.toLowerCase().includes("content") ||
-        !shapeType; // undefined type might still have text
-      
-      if (isLikelyTextCapable) {
-        textCapableShapes.push(item);
-      }
-    } catch (e) {
-      // If we can't determine type, try to include it anyway
-      textCapableShapes.push(item);
-    }
-  }
-  
-  console.log(`[safeExtractText] Found ${textCapableShapes.length} potentially text-capable shapes out of ${shapes.length} total shapes`);
-  
-  if (textCapableShapes.length === 0) {
-    return textBlocks;
-  }
-  
-  // Try to load textFrame for all text-capable shapes in batches
-  const shapesWithTextFrame = [];
-  
-  // First batch: try to load textFrame - queue all loads first
-  for (let item of textCapableShapes) {
-    item.shape.load("textFrame");
-  }
-  
-  // Sync and check which shapes actually have textFrame
-  try {
-    await context.sync();
-    
-    // After sync, check which shapes have valid textFrame
-    for (let item of textCapableShapes) {
-      try {
-        if (item.shape.textFrame) {
-          shapesWithTextFrame.push(item);
-        }
-      } catch (e) {
-        // Shape doesn't have textFrame - this is normal for images, icons, etc.
-      }
-    }
-  } catch (e) {
-    // Some shapes failed to load textFrame - check them individually
-    console.log(`[safeExtractText] Batch textFrame load failed, checking individually`);
-
-    for (let item of textCapableShapes) {
-      try {
-        // Try to access textFrame directly
-        const tf = item.shape.textFrame;
-        if (tf) {
-          shapesWithTextFrame.push(item);
-        }
-      } catch (individualError) {
-        // Shape doesn't support textFrame - this is normal
-      }
-    }
-  }
-  
-  if (shapesWithTextFrame.length > 0) {
-    
-    // Second batch: for shapes with textFrame, try to load hasText
-    const shapesToCheckForText = [];
-    
-    // Queue all hasText loads
-    for (let item of shapesWithTextFrame) {
-      if (item.shape.textFrame) {
-        item.shape.textFrame.load("hasText");
-      }
-    }
-    
-    // Sync and check which textFrames have the hasText property
-    try {
-      await context.sync();
-      
-      // After sync, check which shapes have hasText
-      for (let item of shapesWithTextFrame) {
-        try {
-          if (item.shape.textFrame && item.shape.textFrame.hasText !== undefined) {
-            shapesToCheckForText.push(item);
-          }
-        } catch (e) {
-          // Shape doesn't support hasText - this is normal for some shape types
-        }
-      }
-    } catch (e) {
-      console.log(`[safeExtractText] Batch hasText load failed, checking individually`);
-
-      for (let item of shapesWithTextFrame) {
-        try {
-          if (item.shape.textFrame && item.shape.textFrame.hasText !== undefined) {
-            shapesToCheckForText.push(item);
-          }
-        } catch (individualError) {
-          // Shape doesn't support hasText - this is normal for some shape types
-        }
-      }
-    }
-    
-    if (shapesToCheckForText.length > 0) {
-      
-      // Third batch: for shapes with text, load the actual text content
-      const shapesWithText = [];
-      
-      // Queue text loads for shapes that have text
-      for (let item of shapesToCheckForText) {
-        try {
-          if (item.shape.textFrame && item.shape.textFrame.hasText) {
-            item.shape.textFrame.load("textRange/text");
-            shapesWithText.push(item);
-          }
-        } catch (e) {
-          console.log(`[safeExtractText] Could not queue text load for shape ${item.shape.id}`);
-        }
-      }
-      
-      if (shapesWithText.length > 0) {
-        try {
-          await context.sync();
-        } catch (e) {
-          console.log(`[safeExtractText] Some shapes failed text load: ${e.message}`);
-          // Continue with shapes that succeeded
-        }
-        
-        // Extract the text
-        for (let item of shapesWithText) {
-          try {
-            if (item.shape.textFrame &&
-                item.shape.textFrame.textRange &&
-                item.shape.textFrame.textRange.text) {
-              const text = item.shape.textFrame.textRange.text;
-              if (text.trim()) {
-                textBlocks.push({
-                  slideIndex: item.slideIndex + slideIndexOffset,
-                  slideId: item.slideId,  // Store slide ID for unique identification
-                  shapeId: item.shape.id,
-                  originalText: text
-                });
-              }
-            }
-          } catch (e) {
-            // Error extracting text - skip this shape
-          }
-        }
-      }
-    }
-  }
-  
-  console.log(`[safeExtractText] Successfully extracted ${textBlocks.length} text blocks`);
-  
-  return textBlocks;
 }
 
 // Process functions
@@ -1227,8 +717,6 @@ async function processPresentationSlideBySlide(assistantId, instructions, token,
     totalSlides = context.presentation.slides.items.length;
   });
 
-  console.log(`[ProcessPresentation] Starting slide-by-slide processing for ${totalSlides} slides`);
-
   let totalUpdated = 0;
   let totalFailed = 0;
   let slidesWithContent = 0;
@@ -1250,12 +738,10 @@ async function processPresentationSlideBySlide(assistantId, instructions, token,
       });
 
       if (slideTextBlocks.length === 0) {
-        console.log(`[ProcessPresentation] Slide ${slideIndex + 1} has no text blocks, skipping`);
         continue;
       }
 
       slidesWithContent++;
-      console.log(`[ProcessPresentation] Slide ${slideIndex + 1} has ${slideTextBlocks.length} text blocks`);
 
       // Step 2: Process text blocks via API
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Slide ${slideIndex + 1}/${totalSlides}: Processing ${slideTextBlocks.length} text blocks...`;
@@ -1309,7 +795,6 @@ async function processPresentationSlideBySlide(assistantId, instructions, token,
             }
             return null;
           } catch (error) {
-            console.error(`[ProcessPresentation] Error processing text block: ${error.message}`);
             return null;
           }
         });
@@ -1327,12 +812,9 @@ async function processPresentationSlideBySlide(assistantId, instructions, token,
           totalUpdated += updatedCount;
           totalFailed += failedCount;
         });
-
-        console.log(`[ProcessPresentation] Slide ${slideIndex + 1} complete: ${slideResults.length} updated`);
       }
 
     } catch (slideError) {
-      console.error(`[ProcessPresentation] Error processing slide ${slideIndex + 1}:`, slideError);
       totalFailed++;
     }
   }
@@ -1345,8 +827,6 @@ async function processPresentationSlideBySlide(assistantId, instructions, token,
   } else {
     document.getElementById("status").innerHTML = `❌ No text blocks were updated`;
   }
-
-  console.log(`[ProcessPresentation] Complete. Updated: ${totalUpdated}, Failed: ${totalFailed}`);
 }
 
 async function processWithAssistant(assistantId, instructions, scope) {
@@ -1361,8 +841,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
   let processedResults = [];
 
-  console.log(`[ProcessWithAssistant] Starting processing with scope: ${scope}`);
-
   // Handle presentation scope separately - process slide by slide
   if (scope === "presentation") {
     await processPresentationSlideBySlide(assistantId, instructions, token, workspaceId);
@@ -1373,8 +851,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
   try {
     await PowerPoint.run(async (context) => {
       let textBlocksToProcess = [];
-
-    console.log('[ProcessWithAssistant] Initializing text blocks collection');
 
     if (scope === "selection") {
       // Extract text from selected shapes
@@ -1403,8 +879,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
         await context.sync();
 
         if (selectedShapes.items && selectedShapes.items.length > 0) {
-          console.log(`[ProcessWithAssistant] Found ${selectedShapes.items.length} selected shapes, finding their slide`);
-
           // Use getParentSlide to find the slide
           const parentSlide = selectedShapes.items[0].getParentSlideOrNullObject();
           parentSlide.load("id");
@@ -1420,20 +894,16 @@ async function processWithAssistant(assistantId, instructions, scope) {
             for (let i = 0; i < presentation.slides.items.length; i++) {
               if (presentation.slides.items[i].id === parentSlide.id) {
                 targetSlideIndex = i;
-                console.log(`[ProcessWithAssistant] Found slide from selected shape: slide ${i + 1}`);
                 break;
               }
             }
           }
         }
-      } catch (e) {
-        console.log('[ProcessWithAssistant] Could not determine slide from selected shapes:', e.message);
-      }
+      } catch (e) { /* Could not determine slide from selected shapes */ }
 
       // Method 2: Try getActiveSlide() (desktop PowerPoint)
       if (targetSlideIndex === -1) {
         try {
-          console.log('[ProcessWithAssistant] Attempting to get active slide');
           const activeSlide = context.presentation.getActiveSlide();
           activeSlide.load("id");
           await context.sync();
@@ -1446,19 +916,15 @@ async function processWithAssistant(assistantId, instructions, scope) {
           for (let i = 0; i < presentation.slides.items.length; i++) {
             if (presentation.slides.items[i].id === activeSlide.id) {
               targetSlideIndex = i;
-              console.log(`[ProcessWithAssistant] Active slide is at index ${i} (slide ${i + 1})`);
               break;
             }
           }
-        } catch (e) {
-          console.log('[ProcessWithAssistant] getActiveSlide not available:', e.message);
-        }
+        } catch (e) { /* getActiveSlide not available */ }
       }
 
       // Method 3: Fallback to getSelectedSlides() (from thumbnail panel)
       if (targetSlideIndex === -1) {
         try {
-          console.log('[ProcessWithAssistant] Trying getSelectedSlides (from thumbnail panel)');
           const selectedSlides = context.presentation.getSelectedSlides();
           selectedSlides.load("items");
           await context.sync();
@@ -1472,14 +938,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
             for (let i = 0; i < presentation.slides.items.length; i++) {
               if (presentation.slides.items[i].id === selectedSlides.items[0].id) {
                 targetSlideIndex = i;
-                console.log(`[ProcessWithAssistant] Selected slide from thumbnail panel is at index ${i} (slide ${i + 1})`);
                 break;
               }
             }
           }
-        } catch (e) {
-          console.log('[ProcessWithAssistant] getSelectedSlides also failed:', e.message);
-        }
+        } catch (e) { /* getSelectedSlides also failed */ }
       }
 
       if (targetSlideIndex === -1) {
@@ -1498,7 +961,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
     // Check if we have text blocks to process (for selection and slide scopes)
     if (!textBlocksToProcess || textBlocksToProcess.length === 0) {
-      console.log('[ProcessWithAssistant] No text blocks found to process');
       document.getElementById("status").innerHTML = `
         <div style="color: #f59e0b; padding: 10px; background: #fef3c7; border-radius: 4px; font-size: 12px;">
           <strong>⚠️ No text found</strong><br>
@@ -1509,9 +971,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
           </span>
         </div>
       `;
-      return; // Exit gracefully instead of throwing error
+      return;
     }
-    console.log(`[ProcessWithAssistant] Total text blocks to process: ${textBlocksToProcess.length}`);
 
     // Warn if processing more than 100 text blocks
     if (textBlocksToProcess.length > 100) {
@@ -1594,14 +1055,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
           };
         }
 
-        // Log why we're returning null
-        console.log(`[ProcessWithAssistant] No agent response for text block ${index}:`,
-          !lastAgentMessage ? 'No agent message found' :
-          !lastAgentMessage.content ? 'Agent message has no content' :
-          'Unknown reason');
         return null;
       } catch (error) {
-        console.error(`Error processing text block ${index}: ${error.message}`);
         return null;
       }
     };
@@ -1625,24 +1080,9 @@ async function processWithAssistant(assistantId, instructions, scope) {
     }
 
     processedResults = results;
-
-    console.log(`[ProcessWithAssistant] Processing complete. Results: ${processedResults.length}`);
-    if (processedResults.length > 0) {
-      console.log('[ProcessWithAssistant] First result sample:', {
-        shapeId: processedResults[0].shapeId,
-        slideIndex: processedResults[0].slideIndex,
-        originalTextLength: processedResults[0].originalText?.length,
-        newTextLength: processedResults[0].newText?.length,
-        newTextPreview: processedResults[0].newText?.substring(0, 100)
-      });
-    }
-
-      // Clear the text blocks list to free memory
       textBlocksToProcess = null;
     });
   } catch (contextError) {
-    // Catch errors from PowerPoint.run context
-    console.error('[ProcessWithAssistant] PowerPoint.run error:', contextError);
     const errorHtml = `
       <div style="color: red; font-size: 12px;">
         <strong>❌ PowerPoint Context Error</strong><br>
@@ -1660,14 +1100,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
   // Now apply all the results back to PowerPoint (for selection and slide scopes)
   if (processedResults.length > 0 && !processingCancelled) {
-    console.log(`[ProcessWithAssistant] Applying ${processedResults.length} processed results`);
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating presentation...`;
 
     try {
       await PowerPoint.run(async (context) => {
-        console.log('[ProcessWithAssistant] Starting PowerPoint context for updates');
-
-        // Use the updateShapes helper function
         const { updatedCount, failedCount } = await updateShapes(context, processedResults);
 
         // Show final status
@@ -1678,7 +1114,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       });
     } catch (updateError) {
-      console.error('[ProcessWithAssistant] Error during update phase:', updateError);
       const errorHtml = `
         <div style="color: red; font-size: 12px;">
           <strong>❌ Update Error</strong><br>
@@ -1693,17 +1128,6 @@ async function processWithAssistant(assistantId, instructions, scope) {
     }
   } else if (!processingCancelled) {
     document.getElementById("status").innerHTML = `❌ No text blocks were processed`;
-  } else {
-    console.log('[ProcessWithAssistant] Processing was cancelled');
-  }
-
-  console.log('[ProcessWithAssistant] Process completed successfully');
-}
-
-function updateProgressDisplay() {
-  const statusDiv = document.getElementById("status");
-  if (processingProgress.status === "processing") {
-    statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
   }
 }
 
