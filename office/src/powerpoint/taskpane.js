@@ -959,7 +959,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
       presentation.slides.load("items");
       await context.sync();
 
-      // Load all shapes with their IDs
+      // Load all shapes with their IDs to build a lookup map
       for (let slide of presentation.slides.items) {
         slide.shapes.load("items");
       }
@@ -973,17 +973,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
       await context.sync();
 
-      // Build a map of shapes for quick lookup
-      const shapeMap = new Map();
+      // Build a map of shape locations (slideIndex, shapeIndex) by ID
+      const shapeLocationMap = new Map();
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
-        for (let shape of slide.shapes.items) {
-          shapeMap.set(shape.id, { shape, slideIndex });
+        for (let shapeIndex = 0; shapeIndex < slide.shapes.items.length; shapeIndex++) {
+          const shapeId = slide.shapes.items[shapeIndex].id;
+          shapeLocationMap.set(shapeId, { slideIndex, shapeIndex });
         }
       }
 
-      console.log(`[ProcessWithAssistant] Created shape map with ${shapeMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeMap.keys()).slice(0, 5));
+      console.log(`[ProcessWithAssistant] Created shape location map with ${shapeLocationMap.size} shapes`);
+      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeLocationMap.keys()).slice(0, 5));
       console.log('[ProcessWithAssistant] Looking for shape IDs:', processedResults.map(r => r.shapeId).slice(0, 5));
 
       // Filter out results we can update
@@ -992,7 +993,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
           console.log("[ProcessWithAssistant] Skipping selected text");
           return false;
         }
-        if (!r.shapeId || !shapeMap.has(r.shapeId)) {
+        if (!r.shapeId || !shapeLocationMap.has(r.shapeId)) {
           console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not found in map`);
           return false;
         }
@@ -1001,73 +1002,48 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       console.log(`[ProcessWithAssistant] Will update ${resultsToUpdate.length} shapes`);
 
-      // Apply updates with batched sync operations for better performance
+      // Apply updates one by one (simpler and more reliable)
       let updatedCount = 0;
       let failedCount = 0;
 
-      // Batch 1: Load all textFrames at once
-      const shapesToUpdate = [];
       for (let result of resultsToUpdate) {
-        const { shape } = shapeMap.get(result.shapeId);
-        shape.load("textFrame");
-        shapesToUpdate.push({ shape, result });
-      }
-
-      try {
-        await context.sync();
-        console.log("[ProcessWithAssistant] Loaded all textFrames");
-      } catch (e) {
-        console.error(`[ProcessWithAssistant] Error loading textFrames: ${e.message}`);
-        failedCount = resultsToUpdate.length;
-      }
-
-      if (failedCount === 0) {
-        // Batch 2: Load all textRanges at once
-        const shapesWithTextFrame = [];
-        for (let item of shapesToUpdate) {
-          if (item.shape.textFrame) {
-            item.shape.textFrame.load("textRange");
-            shapesWithTextFrame.push(item);
-          } else {
-            console.log(`[ProcessWithAssistant] Shape ${item.result.shapeId} has no textFrame`);
-            failedCount++;
-          }
-        }
-
         try {
-          await context.sync();
-          console.log("[ProcessWithAssistant] Loaded all textRanges");
-        } catch (e) {
-          console.error(`[ProcessWithAssistant] Error loading textRanges: ${e.message}`);
-          failedCount += shapesWithTextFrame.length;
-        }
+          const location = shapeLocationMap.get(result.shapeId);
+          const slide = presentation.slides.items[location.slideIndex];
+          const shape = slide.shapes.items[location.shapeIndex];
 
-        // Batch 3: Set all text values at once
-        for (let item of shapesWithTextFrame) {
-          if (item.shape.textFrame && item.shape.textFrame.textRange) {
-            try {
-              const newText = item.result.newText.trim();
-              console.log(`[ProcessWithAssistant] Setting text for shape ${item.result.shapeId}: "${newText.substring(0, 50)}..."`);
-              item.shape.textFrame.textRange.text = newText;
-            } catch (e) {
-              console.error(`[ProcessWithAssistant] Error setting text for shape ${item.result.shapeId}: ${e.message}`);
-              failedCount++;
-            }
-          } else {
-            console.log(`[ProcessWithAssistant] Shape ${item.result.shapeId} has no textRange`);
+          // Load textFrame
+          shape.load("textFrame");
+          await context.sync();
+
+          if (!shape.textFrame) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame`);
             failedCount++;
+            continue;
           }
-        }
 
-        // Final sync to apply all text updates
-        try {
+          // Load textRange
+          shape.textFrame.load("textRange");
           await context.sync();
-          updatedCount = shapesWithTextFrame.length - failedCount;
-          console.log(`[ProcessWithAssistant] Applied all text updates. Success: ${updatedCount}`);
+
+          if (!shape.textFrame.textRange) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textRange`);
+            failedCount++;
+            continue;
+          }
+
+          // Set the new text
+          const newText = result.newText.trim();
+          console.log(`[ProcessWithAssistant] Setting text for shape ${result.shapeId}: "${newText.substring(0, 50)}..."`);
+          shape.textFrame.textRange.text = newText;
+          await context.sync();
+
+          updatedCount++;
+          console.log(`[ProcessWithAssistant] Successfully updated shape ${result.shapeId}`);
+
         } catch (e) {
-          console.error(`[ProcessWithAssistant] Error applying text updates: ${e.message}`);
-          failedCount = shapesWithTextFrame.length;
-          updatedCount = 0;
+          console.error(`[ProcessWithAssistant] Error updating shape ${result.shapeId}: ${e.message}`);
+          failedCount++;
         }
       }
       
