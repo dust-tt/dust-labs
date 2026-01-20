@@ -1166,45 +1166,14 @@ async function handleSubmit(e) {
     return;
   }
 
-  // If processing entire presentation, count text blocks first
-  if (scope === "presentation") {
-    document.getElementById("submitBtn").disabled = true;
-    
-    try {
-      const textBlockCount = await countPresentationTextBlocks();
-      
-      if (textBlockCount === 0) {
-        document.getElementById("submitBtn").disabled = false;
-        document.getElementById("status").textContent = "❌ No text content found to process";
-        return;
-      }
-      
-      // Only show confirmation dialog if more than 100 text blocks
-      if (textBlockCount > 100) {
-        const confirmed = await showConfirmationDialog(textBlockCount);
-        
-        if (!confirmed) {
-          document.getElementById("submitBtn").disabled = false;
-          document.getElementById("status").innerHTML = "";
-          return;
-        }
-      }
-    } catch (error) {
-      document.getElementById("submitBtn").disabled = false;
-      document.getElementById("status").textContent = "❌ Error: " + error.message;
-      return;
-    }
-  } else {
-    document.getElementById("submitBtn").disabled = true;
-  }
-
-  document.getElementById("status").innerHTML =
-    '<div class="spinner"></div> Extracting content...';
-
-  // Show cancel button, hide submit button
+  // Disable submit button and show cancel button
+  document.getElementById("submitBtn").disabled = true;
   document.getElementById("submitBtn").style.display = "none";
   document.getElementById("cancelBtn").style.display = "block";
   processingCancelled = false;
+
+  document.getElementById("status").innerHTML =
+    '<div class="spinner"></div> Extracting content...';
 
   try {
     await processWithAssistant(
@@ -1728,71 +1697,6 @@ function updateProgressDisplay() {
   if (processingProgress.status === "processing") {
     statusDiv.innerHTML = `<div class="spinner"></div> Processing (${processingProgress.current}/${processingProgress.total})`;
   }
-}
-
-// Count text blocks in presentation with progress updates (slide by slide)
-async function countPresentationTextBlocks() {
-  // Update status before entering PowerPoint.run
-  document.getElementById("status").innerHTML = '<div class="spinner"></div> Counting slides...';
-
-  let totalTextBlocks = 0;
-  let totalSlides = 0;
-
-  // First get the slide count
-  await PowerPoint.run(async (context) => {
-    const presentation = context.presentation;
-    presentation.slides.load("items");
-    await context.sync();
-    totalSlides = presentation.slides.items.length;
-  });
-
-  // Count text blocks slide by slide
-  for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning slide ${slideIndex + 1} of ${totalSlides}...`;
-
-    await PowerPoint.run(async (context) => {
-      const slideBlocks = await extractTextFromSlideShapes(context, slideIndex);
-      totalTextBlocks += slideBlocks.length;
-    });
-  }
-
-  document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${totalTextBlocks} text blocks across ${totalSlides} slides`;
-  return totalTextBlocks;
-}
-
-// Show confirmation dialog
-function showConfirmationDialog(textBlockCount) {
-  return new Promise((resolve) => {
-    const modal = document.getElementById("confirmationModal");
-    const message = document.getElementById("confirmationMessage");
-    const confirmBtn = document.getElementById("confirmProcessBtn");
-    const cancelBtn = document.getElementById("cancelProcessBtn");
-    
-    // Set message for >100 text blocks warning
-    message.textContent = `You're about to process ${textBlockCount} text blocks. Processing this many blocks may take a while and could hit rate limits.\n\nAre you sure you want to continue?`;
-    
-    // Show modal
-    modal.style.display = "flex";
-    
-    // Handle confirm
-    const handleConfirm = () => {
-      modal.style.display = "none";
-      confirmBtn.removeEventListener("click", handleConfirm);
-      cancelBtn.removeEventListener("click", handleCancel);
-      resolve(true);
-    };
-    
-    // Handle cancel
-    const handleCancel = () => {
-      modal.style.display = "none";
-      confirmBtn.removeEventListener("click", handleConfirm);
-      cancelBtn.removeEventListener("click", handleCancel);
-      resolve(false);
-    };
-    
-    confirmBtn.addEventListener("click", handleConfirm);
-    cancelBtn.addEventListener("click", handleCancel);
-  });
 }
 
 // Cancel processing function
