@@ -724,123 +724,191 @@ async function handleSubmit(e) {
 async function processPresentationSlideBySlide(assistantId, instructions, token, workspaceId) {
   const MAX_CONCURRENT = 10;
 
-  // First, get the total slide count
+  document.getElementById("status").innerHTML = `<div class="spinner"></div> Extracting text from all slides...`;
+
+  // Step 1: Extract text from ALL slides in a single PowerPoint.run context
+  let allTextBlocks = [];
   let totalSlides = 0;
-  document.getElementById("status").innerHTML = `<div class="spinner"></div> Getting slide count...`;
 
-  await PowerPoint.run(async (context) => {
-    context.presentation.slides.load("items");
-    await context.sync();
-    totalSlides = context.presentation.slides.items.length;
-  });
+  try {
+    await PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+      presentation.slides.load("items");
+      await context.sync();
 
-  let totalUpdated = 0;
-  let totalFailed = 0;
-  let slidesWithContent = 0;
+      totalSlides = presentation.slides.items.length;
 
-  // Process each slide: extract → process → update
-  for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
+      for (let slideIndex = 0; slideIndex < totalSlides; slideIndex++) {
+        if (processingCancelled) break;
+
+        document.getElementById("status").innerHTML = `<div class="spinner"></div> Extracting text from slide ${slideIndex + 1}/${totalSlides}...`;
+
+        const slide = presentation.slides.items[slideIndex];
+        slide.load("id");
+        slide.shapes.load("items");
+        await context.sync();
+
+        const slideId = slide.id;
+
+        // Batch load all shape ids and types
+        for (const shape of slide.shapes.items) {
+          shape.load("id, type");
+        }
+        await context.sync();
+
+        if (processingCancelled) break;
+
+        for (const shape of slide.shapes.items) {
+          if (processingCancelled) break;
+
+          try {
+            // Handle grouped shapes
+            if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
+              try {
+                shape.load("group");
+                await context.sync();
+
+                if (shape.group) {
+                  shape.group.load("shapes");
+                  await context.sync();
+
+                  if (shape.group.shapes) {
+                    shape.group.shapes.load("items");
+                    await context.sync();
+
+                    for (const groupedShape of shape.group.shapes.items) {
+                      groupedShape.load("id, type");
+                    }
+                    await context.sync();
+
+                    for (const groupedShape of shape.group.shapes.items) {
+                      if (processingCancelled) break;
+                      const extracted = await extractTextFromShape(context, groupedShape, slideIndex, slideId, true, shape.id);
+                      if (extracted) allTextBlocks.push({ ...extracted, isSlideScope: true });
+                    }
+                  }
+                }
+              } catch (e) { /* Group API not available */ }
+              continue;
+            }
+
+            // Regular shape
+            const extracted = await extractTextFromShape(context, shape, slideIndex, slideId, false, null);
+            if (extracted) allTextBlocks.push({ ...extracted, isSlideScope: true });
+          } catch (e) { /* Shape doesn't support text */ }
+        }
+      }
+    });
+  } catch (extractError) {
+    document.getElementById("status").innerHTML = `❌ Error extracting text: ${extractError.message}`;
+    return;
+  }
+
+  if (processingCancelled) {
+    document.getElementById("status").innerHTML = "Processing cancelled";
+    return;
+  }
+
+  if (allTextBlocks.length === 0) {
+    document.getElementById("status").innerHTML = `⚠️ No text content found in ${totalSlides} slides`;
+    return;
+  }
+
+  // Step 2: Process all text blocks via API
+  document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing ${allTextBlocks.length} text blocks...`;
+
+  const processedResults = [];
+  let processedCount = 0;
+
+  for (let i = 0; i < allTextBlocks.length; i += MAX_CONCURRENT) {
     if (processingCancelled) {
       document.getElementById("status").innerHTML = "Processing cancelled";
       return;
     }
 
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Slide ${slideIndex + 1}/${totalSlides}: Extracting text...`;
+    const batch = allTextBlocks.slice(i, Math.min(i + MAX_CONCURRENT, allTextBlocks.length));
+    const batchPromises = batch.map(async (textBlock) => {
+      if (processingCancelled) return null;
 
-    try {
-      // Step 1: Extract text from this slide
-      let slideTextBlocks = [];
-      await PowerPoint.run(async (context) => {
-        slideTextBlocks = await extractTextFromSlideShapes(context, slideIndex);
-      });
+      try {
+        const messageContent = (instructions || "Process this content:") + "\n\nInput:\n" + textBlock.originalText;
+        const payload = {
+          message: {
+            content: messageContent,
+            mentions: [{ configurationId: assistantId }],
+            context: {
+              username: "powerpoint",
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              fullName: "PowerPoint User",
+              email: "powerpoint@dust.tt",
+              profilePictureUrl: "",
+              origin: "powerpoint",
+            },
+          },
+          blocking: true,
+          title: "PowerPoint Conversation",
+          visibility: "unlisted",
+          skipToolsValidation: true,
+        };
 
-      if (slideTextBlocks.length === 0) {
-        continue;
-      }
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
+        const result = await callDustAPI(apiPath, {
+          method: "POST",
+          body: payload,
+          headers: { Authorization: "Bearer " + token },
+        });
 
-      slidesWithContent++;
+        if (processingCancelled) return null;
 
-      // Step 2: Process text blocks via API
-      document.getElementById("status").innerHTML = `<div class="spinner"></div> Slide ${slideIndex + 1}/${totalSlides}: Processing ${slideTextBlocks.length} text blocks...`;
+        const messages = result.conversation.content;
+        const lastAgentMessage = messages.flat().reverse().find((msg) => msg.type === "agent_message");
 
-      const slideResults = [];
-      for (let i = 0; i < slideTextBlocks.length; i += MAX_CONCURRENT) {
-        if (processingCancelled) {
-          document.getElementById("status").innerHTML = "Processing cancelled";
-          return;
+        if (lastAgentMessage && lastAgentMessage.content) {
+          processedCount++;
+          document.getElementById("status").innerHTML = `<div class="spinner"></div> Processing (${processedCount}/${allTextBlocks.length})...`;
+          return { ...textBlock, newText: lastAgentMessage.content };
         }
-
-        const batch = slideTextBlocks.slice(i, Math.min(i + MAX_CONCURRENT, slideTextBlocks.length));
-        const batchPromises = batch.map(async (textBlock) => {
-          if (processingCancelled) return null;
-
-          try {
-            const messageContent = (instructions || "Process this content:") + "\n\nInput:\n" + textBlock.originalText;
-            const payload = {
-              message: {
-                content: messageContent,
-                mentions: [{ configurationId: assistantId }],
-                context: {
-                  username: "powerpoint",
-                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                  fullName: "PowerPoint User",
-                  email: "powerpoint@dust.tt",
-                  profilePictureUrl: "",
-                  origin: "powerpoint",
-                },
-              },
-              blocking: true,
-              title: "PowerPoint Conversation",
-              visibility: "unlisted",
-              skipToolsValidation: true,
-            };
-
-            const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
-            const result = await callDustAPI(apiPath, {
-              method: "POST",
-              body: payload,
-              headers: { Authorization: "Bearer " + token },
-            });
-
-            if (processingCancelled) return null;
-
-            const messages = result.conversation.content;
-            const lastAgentMessage = messages.flat().reverse().find((msg) => msg.type === "agent_message");
-
-            if (lastAgentMessage && lastAgentMessage.content) {
-              return { ...textBlock, newText: lastAgentMessage.content };
-            }
-            return null;
-          } catch (error) {
-            return null;
-          }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        slideResults.push(...batchResults.filter(r => r !== null));
+        return null;
+      } catch (error) {
+        return null;
       }
+    });
 
-      // Step 3: Update shapes for this slide
-      if (slideResults.length > 0 && !processingCancelled) {
-        document.getElementById("status").innerHTML = `<div class="spinner"></div> Slide ${slideIndex + 1}/${totalSlides}: Updating ${slideResults.length} text blocks...`;
+    const batchResults = await Promise.all(batchPromises);
+    processedResults.push(...batchResults.filter(r => r !== null));
+  }
 
-        await PowerPoint.run(async (context) => {
-          const { updatedCount, failedCount } = await updateShapes(context, slideResults);
-          totalUpdated += updatedCount;
-          totalFailed += failedCount;
-        });
-      }
+  if (processingCancelled) {
+    document.getElementById("status").innerHTML = "Processing cancelled";
+    return;
+  }
 
-    } catch (slideError) {
-      totalFailed++;
-    }
+  if (processedResults.length === 0) {
+    document.getElementById("status").innerHTML = `❌ No text blocks were processed`;
+    return;
+  }
+
+  // Step 3: Update all shapes in a single PowerPoint.run context
+  document.getElementById("status").innerHTML = `<div class="spinner"></div> Updating ${processedResults.length} text blocks...`;
+
+  let totalUpdated = 0;
+  let totalFailed = 0;
+
+  try {
+    await PowerPoint.run(async (context) => {
+      const { updatedCount, failedCount } = await updateShapes(context, processedResults);
+      totalUpdated = updatedCount;
+      totalFailed = failedCount;
+    });
+  } catch (updateError) {
+    document.getElementById("status").innerHTML = `❌ Error updating: ${updateError.message}`;
+    return;
   }
 
   // Show final status
+  const slidesWithContent = new Set(processedResults.map(r => r.slideIndex)).size;
   if (totalUpdated > 0) {
     document.getElementById("status").innerHTML = `✅ Updated ${totalUpdated} text blocks across ${slidesWithContent} slides${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`;
-  } else if (slidesWithContent === 0) {
-    document.getElementById("status").innerHTML = `⚠️ No text content found in ${totalSlides} slides`;
   } else {
     document.getElementById("status").innerHTML = `❌ No text blocks were updated`;
   }
