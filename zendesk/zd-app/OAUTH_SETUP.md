@@ -11,7 +11,7 @@ Since WorkOS doesn't support wildcard characters in URL paths, we use a stable p
 
 ### How It Works
 
-1. The Zendesk app uses a **stable redirect URI**: `https://dust.tt/api/oauth-zendesk/callback`
+1. The Zendesk app uses a **stable redirect URI**: `https://dust.tt/api/v1/auth/callback`
 2. The actual Zendesk callback URL is encoded in the OAuth `state` parameter
 3. After OAuth completes, WorkOS redirects to the dust.tt proxy endpoint
 4. The proxy decodes the `state` parameter and redirects to the actual Zendesk callback URL with the authorization code
@@ -26,12 +26,12 @@ Add the following redirect URIs to your WorkOS OAuth Application:
 
 **For US region:**
 ```
-https://dust.tt/api/oauth-zendesk/callback
+https://dust.tt/api/v1/auth/callback
 ```
 
 **For EU region:**
 ```
-https://eu.dust.tt/api/oauth-zendesk/callback
+https://eu.dust.tt/api/v1/auth/callback
 ```
 
 ### 2. Deploy the Zendesk App
@@ -50,7 +50,7 @@ Deploy your Zendesk app using the standard deployment process. No additional con
 Open browser console (F12) to see OAuth debug messages:
 
 ```
-[DustZendeskAuth] OAuth redirect URI (stable): https://dust.tt/api/oauth-zendesk/callback
+[DustZendeskAuth] OAuth redirect URI (stable): https://dust.tt/api/v1/auth/callback
 [DustZendeskAuth] Zendesk callback URL: https://1073173.apps.zdusercontent.com/.../oauth-callback.html
 ```
 
@@ -62,8 +62,8 @@ The second URL is where the user will be redirected after OAuth (changes per dep
 ### OAuth fails with "Invalid redirect URI"
 
 1. Verify the stable redirect URI is registered in WorkOS:
-   - US: `https://dust.tt/api/oauth-zendesk/callback`
-   - EU: `https://eu.dust.tt/api/oauth-zendesk/callback`
+   - US: `https://dust.tt/api/v1/auth/callback`
+   - EU: `https://eu.dust.tt/api/v1/auth/callback`
 
 2. Check which region the app is using (console logs show which dust.tt URL is being used)
 

@@ -87,7 +87,7 @@
     function getOAuthRedirectUri() {
         // Use a stable redirect URI on dust.tt that will proxy back to Zendesk
         // This avoids the issue of Zendesk's dynamic deployment hashes breaking OAuth
-        const redirectUri = `${getDustBaseUrl()}/api/oauth-zendesk/callback`;
+        const redirectUri = `${getDustBaseUrl()}/api/v1/auth/callback`;
 
         console.log('[DustZendeskAuth] OAuth redirect URI (stable):', redirectUri);
 
