@@ -1237,8 +1237,85 @@ async function processWithAssistant(assistantId, instructions, scope) {
     try {
       await PowerPoint.run(async (context) => {
       console.log('[ProcessWithAssistant] Starting PowerPoint context for updates');
-      
-      // Load all slides and shapes
+
+      // Special handling for selection scope: use getSelectedShapes() again to get fresh references
+      const hasSelectionScope = processedResults.some(r => r.isSelection);
+
+      if (hasSelectionScope) {
+        console.log('[ProcessWithAssistant] Using selection scope - getting selected shapes again for fresh references');
+
+        const selectedShapes = context.presentation.getSelectedShapes();
+        selectedShapes.load("items");
+        await context.sync();
+
+        // Load shape IDs
+        for (let shape of selectedShapes.items) {
+          shape.load("id");
+        }
+        await context.sync();
+
+        console.log(`[ProcessWithAssistant] Got ${selectedShapes.items.length} selected shapes with IDs:`, selectedShapes.items.map(s => s.id));
+
+        // Match results to fresh shape references by ID
+        let updatedCount = 0;
+        let failedCount = 0;
+
+        for (let result of processedResults) {
+          const freshShape = selectedShapes.items.find(s => s.id === result.shapeId);
+
+          if (!freshShape) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not in current selection`);
+            failedCount++;
+            continue;
+          }
+
+          try {
+            // Load textFrame
+            freshShape.load("textFrame");
+            await context.sync();
+
+            if (!freshShape.textFrame) {
+              console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame`);
+              failedCount++;
+              continue;
+            }
+
+            // Load textRange
+            freshShape.textFrame.load("textRange");
+            await context.sync();
+
+            if (!freshShape.textFrame.textRange) {
+              console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textRange`);
+              failedCount++;
+              continue;
+            }
+
+            // Update the text
+            const newText = result.newText.trim();
+            console.log(`[ProcessWithAssistant] Updating selected shape ${result.shapeId}: "${newText.substring(0, 50)}..."`);
+            freshShape.textFrame.textRange.text = newText;
+            await context.sync();
+
+            updatedCount++;
+            console.log(`[ProcessWithAssistant] ✓ Successfully updated selected shape ${result.shapeId}`);
+          } catch (e) {
+            console.error(`[ProcessWithAssistant] Error updating shape ${result.shapeId}: ${e.message}`);
+            failedCount++;
+          }
+        }
+
+        console.log(`[ProcessWithAssistant] Selection update complete. Updated: ${updatedCount}, Failed: ${failedCount}`);
+
+        if (updatedCount > 0) {
+          document.getElementById("status").innerHTML = `✅ Successfully updated ${updatedCount} selected shape(s)${failedCount > 0 ? ` (${failedCount} failed)` : ''}`;
+        } else {
+          document.getElementById("status").innerHTML = `❌ Failed to update selected shapes`;
+        }
+
+        return; // Exit early for selection scope
+      }
+
+      // For non-selection scopes, use the existing slide-based update logic
       const presentation = context.presentation;
       presentation.slides.load("items");
       await context.sync();
