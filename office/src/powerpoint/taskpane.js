@@ -378,14 +378,13 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
           shapesWithTextFrame.push(item);
         }
       } catch (e) {
-        // This shape doesn't have a textFrame property
-        console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
+        // Shape doesn't have textFrame - this is normal for images, icons, etc.
       }
     }
   } catch (e) {
     // Some shapes failed to load textFrame - check them individually
-    console.log(`[safeExtractText] Some shapes failed textFrame load, checking individually`);
-    
+    console.log(`[safeExtractText] Batch textFrame load failed, checking individually`);
+
     for (let item of textCapableShapes) {
       try {
         // Try to access textFrame directly
@@ -394,8 +393,7 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
           shapesWithTextFrame.push(item);
         }
       } catch (individualError) {
-        // This specific shape doesn't support textFrame
-        console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support textFrame`);
+        // Shape doesn't support textFrame - this is normal
       }
     }
   }
@@ -423,19 +421,19 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
             shapesToCheckForText.push(item);
           }
         } catch (e) {
-          console.log(`[safeExtractText] Could not access hasText for shape ${item.shape.id}`);
+          // Shape doesn't support hasText - this is normal for some shape types
         }
       }
     } catch (e) {
-      console.log(`[safeExtractText] Some shapes failed hasText load, checking individually`);
-      
+      console.log(`[safeExtractText] Batch hasText load failed, checking individually`);
+
       for (let item of shapesWithTextFrame) {
         try {
           if (item.shape.textFrame && item.shape.textFrame.hasText !== undefined) {
             shapesToCheckForText.push(item);
           }
         } catch (individualError) {
-          console.log(`[safeExtractText] Shape ${item.shape.id} doesn't support hasText`);
+          // Shape doesn't support hasText - this is normal for some shape types
         }
       }
     }
@@ -468,8 +466,8 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
         // Extract the text
         for (let item of shapesWithText) {
           try {
-            if (item.shape.textFrame && 
-                item.shape.textFrame.textRange && 
+            if (item.shape.textFrame &&
+                item.shape.textFrame.textRange &&
                 item.shape.textFrame.textRange.text) {
               const text = item.shape.textFrame.textRange.text;
               if (text.trim()) {
@@ -481,7 +479,7 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
               }
             }
           } catch (e) {
-            console.log(`[safeExtractText] Error extracting text from shape ${item.shape.id}: ${e.message}`);
+            // Error extracting text - skip this shape
           }
         }
       }
@@ -834,6 +832,10 @@ async function processWithAssistant(assistantId, instructions, scope) {
         for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
           const slide = presentation.slides.items[slideIndex];
           for (let shape of slide.shapes.items) {
+            // Check for duplicate shape IDs across slides (shouldn't happen but log it)
+            if (shapeToSlideMap.has(shape.id)) {
+              console.log(`[ProcessWithAssistant] WARNING: Shape ID ${shape.id} found on multiple slides: ${shapeToSlideMap.get(shape.id)} and ${slideIndex}`);
+            }
             shapeToSlideMap.set(shape.id, slideIndex);
           }
         }
@@ -841,8 +843,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
         // Prepare shapes for safe extraction with correct slideIndex
         const shapesToCheck = [];
         for (let selectedShape of selectedShapes.items) {
-          const slideIndex = shapeToSlideMap.get(selectedShape.id) ?? 0;
-          shapesToCheck.push({ shape: selectedShape, slideIndex });
+          const slideIndex = shapeToSlideMap.get(selectedShape.id);
+          if (slideIndex === undefined) {
+            console.log(`[ProcessWithAssistant] WARNING: Selected shape ${selectedShape.id} not found in any slide, using index 0`);
+          }
+          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} is on slide ${slideIndex !== undefined ? slideIndex + 1 : '?'}`);
+          shapesToCheck.push({ shape: selectedShape, slideIndex: slideIndex ?? 0 });
         }
 
         // Use the safe extraction function
@@ -878,7 +884,17 @@ async function processWithAssistant(assistantId, instructions, scope) {
     // Check if we have text blocks to process
     if (textBlocksToProcess.length === 0) {
       console.log('[ProcessWithAssistant] No text blocks found to process');
-      throw new Error("No text content found to process");
+      document.getElementById("status").innerHTML = `
+        <div style="color: #f59e0b; padding: 10px; background: #fef3c7; border-radius: 4px; font-size: 12px;">
+          <strong>⚠️ No text found</strong><br>
+          <span style="font-size: 11px; margin-top: 5px; display: block;">
+            The selected ${scope === 'slide' ? 'slide' : scope === 'selection' ? 'shape' : 'content'}
+            doesn't contain any text to process.
+            ${scope === 'slide' ? '<br><br>Try selecting a slide with text content, or select a specific text box instead.' : ''}
+          </span>
+        </div>
+      `;
+      return; // Exit gracefully instead of throwing error
     }
     console.log(`[ProcessWithAssistant] Total text blocks to process: ${textBlocksToProcess.length}`);
 
@@ -1219,12 +1235,13 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
           // Set the new text
           const newText = result.newText.trim();
-          console.log(`[ProcessWithAssistant] Setting text for shape ${result.shapeId}: "${newText.substring(0, 50)}..."`);
+          const slideNum = result.slideIndex !== null && result.slideIndex !== undefined ? result.slideIndex + 1 : '?';
+          console.log(`[ProcessWithAssistant] Updating shape ${result.shapeId} on slide ${slideNum}: "${newText.substring(0, 50)}..."`);
           shape.textFrame.textRange.text = newText;
           await context.sync();
 
           updatedCount++;
-          console.log(`[ProcessWithAssistant] Successfully updated shape ${result.shapeId}`);
+          console.log(`[ProcessWithAssistant] ✓ Successfully updated shape ${result.shapeId} on slide ${slideNum}`);
 
         } catch (e) {
           console.error(`[ProcessWithAssistant] Error updating shape ${result.shapeId}: ${e.message}`);
