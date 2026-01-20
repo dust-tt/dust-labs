@@ -977,9 +977,53 @@ async function processWithAssistant(assistantId, instructions, scope) {
         console.log(`[ProcessWithAssistant] Target slide ${targetSlideIndex + 1} contains shape IDs:`, slideShapeIds);
 
         // Check if selected shapes are on this slide
-        for (let selectedShape of selectedShapes.items) {
-          const isOnThisSlide = slideShapeIds.includes(selectedShape.id);
-          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} is ${isOnThisSlide ? 'ON' : 'NOT ON'} target slide ${targetSlideIndex + 1}`);
+        const selectedShapeId = selectedShapes.items[0].id;
+        const isOnThisSlide = slideShapeIds.includes(selectedShapeId);
+        console.log(`[ProcessWithAssistant] Selected shape ${selectedShapeId} is ${isOnThisSlide ? 'ON' : 'NOT ON'} target slide ${targetSlideIndex + 1}`);
+
+        // If the shape is NOT on the detected slide, we need to find which slide it's actually on
+        if (!isOnThisSlide) {
+          console.log('[ProcessWithAssistant] Shape not on detected slide - searching all slides to find correct one');
+
+          // Load all slides and their shapes
+          for (let slide of presentation.slides.items) {
+            slide.load("id");
+            slide.shapes.load("items");
+          }
+          await context.sync();
+
+          // Load all shape IDs
+          for (let slide of presentation.slides.items) {
+            for (let shape of slide.shapes.items) {
+              shape.load("id");
+            }
+          }
+          await context.sync();
+
+          // Find which slide contains the selected shape
+          let foundSlideIndex = null;
+          let foundSlideId = null;
+
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            const slide = presentation.slides.items[i];
+            const shapeIds = slide.shapes.items.map(s => s.id);
+
+            if (shapeIds.includes(selectedShapeId)) {
+              foundSlideIndex = i;
+              foundSlideId = slide.id;
+              console.log(`[ProcessWithAssistant] ✓ Found shape ${selectedShapeId} on slide ${i + 1} (ID: ${foundSlideId})`);
+              break;
+            }
+          }
+
+          if (foundSlideIndex !== null) {
+            targetSlideIndex = foundSlideIndex;
+            targetSlideId = foundSlideId;
+            targetSlide = presentation.slides.items[foundSlideIndex];
+            console.log(`[ProcessWithAssistant] Updated target to slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
+          } else {
+            throw new Error(`Could not find shape ${selectedShapeId} on any slide`);
+          }
         }
 
         // All selected shapes use the same slideIndex and slideId
