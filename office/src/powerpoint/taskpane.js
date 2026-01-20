@@ -1059,8 +1059,8 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
 
       console.log(`[ProcessWithAssistant] Created shape-to-slide map with ${shapeToSlideMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeToSlideMap.keys()).slice(0, 5));
-      console.log('[ProcessWithAssistant] Looking for shape IDs:', processedResults.map(r => r.shapeId).slice(0, 5));
+      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeToSlideMap.keys()).slice(0, 10));
+      console.log('[ProcessWithAssistant] Looking for shape IDs:', processedResults.map(r => `${r.shapeId} (slide ${r.slideIndex})`));
 
       // Filter out results we can update
       const resultsToUpdate = processedResults.filter(r => {
@@ -1068,8 +1068,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
           console.log("[ProcessWithAssistant] Skipping selected text");
           return false;
         }
-        if (!r.shapeId || !shapeToSlideMap.has(r.shapeId)) {
-          console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not found in map`);
+        if (!r.shapeId) {
+          console.log(`[ProcessWithAssistant] Result has no shapeId`);
+          return false;
+        }
+
+        // Check if shape exists in map OR if we have a slideIndex to try
+        if (!shapeToSlideMap.has(r.shapeId)) {
+          if (r.slideIndex !== null && r.slideIndex !== undefined) {
+            console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not in map, but has slideIndex ${r.slideIndex} - will try to find it`);
+            return true; // We'll try to find it using slideIndex
+          }
+          console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not found and no slideIndex available`);
           return false;
         }
         return true;
@@ -1077,44 +1087,85 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       console.log(`[ProcessWithAssistant] Will update ${resultsToUpdate.length} shapes`);
 
-      // Apply updates one by one (finding shapes by ID, not index)
+      // Get unique slide indices we need to update
+      const slideIndices = new Set();
+      for (let r of resultsToUpdate) {
+        const slideIdx = shapeToSlideMap.get(r.shapeId) ?? r.slideIndex;
+        if (slideIdx !== null && slideIdx !== undefined) {
+          slideIndices.add(slideIdx);
+        }
+      }
+      console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides:`, Array.from(slideIndices));
+
+      // Reload all needed slides upfront (to get fresh shape references)
+      for (let slideIndex of slideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        slide.shapes.load("items");
+      }
+      await context.sync();
+
+      // Load all shape IDs on the needed slides
+      for (let slideIndex of slideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        for (let shape of slide.shapes.items) {
+          shape.load("id,textFrame");
+        }
+      }
+      await context.sync();
+
+      // Build a fresh ID-to-shape map
+      const freshShapeMap = new Map();
+      for (let slideIndex of slideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        for (let shape of slide.shapes.items) {
+          freshShapeMap.set(shape.id, shape);
+        }
+      }
+
+      console.log(`[ProcessWithAssistant] Created fresh shape map with ${freshShapeMap.size} shapes`);
+      console.log('[ProcessWithAssistant] Fresh shape IDs:', Array.from(freshShapeMap.keys()).slice(0, 10));
+
+      // Apply updates using the fresh shape references
       let updatedCount = 0;
       let failedCount = 0;
 
       for (let result of resultsToUpdate) {
         try {
-          const slideIndex = shapeToSlideMap.get(result.shapeId);
-          const slide = presentation.slides.items[slideIndex];
+          let shape = freshShapeMap.get(result.shapeId);
 
-          // Reload shapes on this slide to get fresh references
-          slide.shapes.load("items");
-          await context.sync();
+          if (!shape) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not in fresh map, checking slide ${result.slideIndex}`);
 
-          // Load IDs for all shapes on this slide
-          for (let shape of slide.shapes.items) {
-            shape.load("id");
-          }
-          await context.sync();
+            // Try to find it on the expected slide
+            if (result.slideIndex !== null && result.slideIndex !== undefined && result.slideIndex < presentation.slides.items.length) {
+              const targetSlide = presentation.slides.items[result.slideIndex];
 
-          // Find the shape by ID
-          let targetShape = null;
-          for (let shape of slide.shapes.items) {
-            if (shape.id === result.shapeId) {
-              targetShape = shape;
-              break;
+              // Search for the shape by ID on this specific slide
+              for (let s of targetSlide.shapes.items) {
+                if (s.id === result.shapeId) {
+                  shape = s;
+                  console.log(`[ProcessWithAssistant] Found shape ${result.shapeId} on slide ${result.slideIndex}`);
+                  break;
+                }
+              }
+            }
+
+            if (!shape) {
+              console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not found anywhere`);
+              failedCount++;
+              continue;
             }
           }
 
-          if (!targetShape) {
-            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not found on slide ${slideIndex}`);
+          // textFrame is already loaded, so we can check it directly
+          if (!shape.textFrame) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} has no textFrame`);
             failedCount++;
             continue;
           }
 
-          const shape = targetShape;
-
-          // Load textFrame
-          shape.load("textFrame");
+          // Load textRange
+          shape.textFrame.load("textRange");
           await context.sync();
 
           if (!shape.textFrame) {
