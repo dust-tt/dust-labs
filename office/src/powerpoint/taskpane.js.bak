@@ -1092,6 +1092,234 @@ async function processWithAssistant(assistantId, instructions, scope) {
     }
 
     // Check if we have text blocks to process
+        try {
+          console.log('[ProcessWithAssistant] Attempting to get active slide');
+          targetSlide = presentation.getActiveSlide();
+          targetSlide.load("id");
+          await context.sync();
+
+          // Find the index of this slide
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            presentation.slides.items[i].load("id");
+          }
+          await context.sync();
+
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            if (presentation.slides.items[i].id === targetSlide.id) {
+              targetSlideIndex = i;
+              console.log(`[ProcessWithAssistant] Active slide detected at index ${i} (slide ${i + 1})`);
+              break;
+            }
+          }
+        } catch (e) {
+          console.log('[ProcessWithAssistant] getActiveSlide not available:', e.message);
+        }
+
+        // Method 2: Try getSelectedSlides() (works in some scenarios)
+        if (!targetSlide) {
+          try {
+            console.log('[ProcessWithAssistant] Trying getSelectedSlides');
+            const selectedSlides = presentation.getSelectedSlides();
+            selectedSlides.load("items");
+            await context.sync();
+
+            if (selectedSlides.items && selectedSlides.items.length > 0) {
+              targetSlide = selectedSlides.items[0];
+              targetSlide.load("id");
+              await context.sync();
+
+              // Find the index
+              for (let i = 0; i < presentation.slides.items.length; i++) {
+                presentation.slides.items[i].load("id");
+              }
+              await context.sync();
+
+              for (let i = 0; i < presentation.slides.items.length; i++) {
+                if (presentation.slides.items[i].id === targetSlide.id) {
+                  targetSlideIndex = i;
+                  console.log(`[ProcessWithAssistant] Selected slide from thumbnail at index ${i} (slide ${i + 1})`);
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            console.log('[ProcessWithAssistant] getSelectedSlides failed:', e.message);
+          }
+        }
+
+        // Method 3: Fallback - find which slide contains the selected shape
+        // But now we know this is ambiguous due to duplicate shape IDs, so warn
+        if (targetSlideIndex === null) {
+          console.log('[ProcessWithAssistant] WARNING: Could not detect active slide, falling back to shape search (may be unreliable due to duplicate shape IDs)');
+
+          // Load all shapes to search
+          for (let slide of presentation.slides.items) {
+            slide.shapes.load("items");
+          }
+          await context.sync();
+
+          // Load IDs
+          for (let slide of presentation.slides.items) {
+            for (let shape of slide.shapes.items) {
+              shape.load("id");
+            }
+          }
+          for (let selectedShape of selectedShapes.items) {
+            selectedShape.load("id");
+          }
+          await context.sync();
+
+          const selectedShapeId = selectedShapes.items[0].id;
+
+          // Search backwards from end
+          for (let slideIndex = presentation.slides.items.length - 1; slideIndex >= 0; slideIndex--) {
+            const slide = presentation.slides.items[slideIndex];
+            let foundShape = false;
+            for (let shape of slide.shapes.items) {
+              if (shape.id === selectedShapeId) {
+                foundShape = true;
+                break;
+              }
+            }
+
+            if (foundShape) {
+              targetSlideIndex = slideIndex;
+              targetSlide = slide;
+              console.log(`[ProcessWithAssistant] Found shape ${selectedShapeId} on slide ${slideIndex + 1} (via fallback search - may be incorrect due to duplicate IDs)`);
+              break;
+            }
+          }
+
+          if (targetSlideIndex === null) {
+            console.log(`[ProcessWithAssistant] ERROR: Could not find selected shape on any slide`);
+            throw new Error("Could not determine which slide contains the selected shape");
+          }
+        }
+
+        // Load the slide ID for the target slide
+        if (!targetSlide) {
+          targetSlide = presentation.slides.items[targetSlideIndex];
+        }
+        targetSlide.load("id");
+        await context.sync();
+        let targetSlideId = targetSlide.id;
+        console.log(`[ProcessWithAssistant] Using slide ${targetSlideIndex + 1} (ID: ${targetSlideId}) for selected shapes`);
+
+        // Load selected shape IDs and verify them
+        for (let selectedShape of selectedShapes.items) {
+          selectedShape.load("id,name,type");
+        }
+        await context.sync();
+
+        console.log('[ProcessWithAssistant] Selected shapes details:');
+        for (let i = 0; i < selectedShapes.items.length; i++) {
+          const s = selectedShapes.items[i];
+          console.log(`  Shape ${i}: id="${s.id}", type="${s.type}", name="${s.name}"`);
+        }
+
+        // Verify: Check if this shape actually exists on the target slide
+        targetSlide.shapes.load("items");
+        await context.sync();
+        for (let shape of targetSlide.shapes.items) {
+          shape.load("id");
+        }
+        await context.sync();
+
+        // Use the official API method to get the parent slide of the selected shape
+        // This is much more reliable than searching through slides by ID
+        console.log('[ProcessWithAssistant] Using getParentSlide() to determine which slide contains the selected shape');
+
+        const selectedShape = selectedShapes.items[0];
+        const actualParentSlide = selectedShape.getParentSlideOrNullObject();
+        actualParentSlide.load("id");
+        await context.sync();
+
+        if (actualParentSlide.isNullObject) {
+          throw new Error("Selected shape does not belong to any slide");
+        }
+
+        const actualParentSlideId = actualParentSlide.id;
+        console.log(`[ProcessWithAssistant] Selected shape's actual parent slide ID: ${actualParentSlideId}`);
+
+        // Find the index of the actual parent slide
+        let actualSlideIndex = null;
+        for (let i = 0; i < presentation.slides.items.length; i++) {
+          presentation.slides.items[i].load("id");
+        }
+        await context.sync();
+
+        for (let i = 0; i < presentation.slides.items.length; i++) {
+          if (presentation.slides.items[i].id === actualParentSlideId) {
+            actualSlideIndex = i;
+            break;
+          }
+        }
+
+        if (actualSlideIndex === null) {
+          throw new Error("Could not find parent slide in presentation");
+        }
+
+        console.log(`[ProcessWithAssistant] Selected shape belongs to slide ${actualSlideIndex + 1} (index ${actualSlideIndex})`);
+
+        // Check if this differs from the thumbnail-selected slide
+        if (actualSlideIndex !== targetSlideIndex) {
+          console.log(`[ProcessWithAssistant] ⚠️ NOTE: Thumbnail shows slide ${targetSlideIndex + 1}, but selected shape is actually on slide ${actualSlideIndex + 1}`);
+        }
+
+        // Use the actual parent slide
+        targetSlideIndex = actualSlideIndex;
+        targetSlideId = actualParentSlideId;
+        targetSlide = presentation.slides.items[actualSlideIndex];
+        console.log(`[ProcessWithAssistant] Using slide ${targetSlideIndex + 1} (ID: ${targetSlideId}) as the correct slide`);
+
+
+        // All selected shapes use the same slideIndex and slideId
+        const shapesToCheck = [];
+        for (let selectedShape of selectedShapes.items) {
+          shapesToCheck.push({ shape: selectedShape, slideIndex: targetSlideIndex, slideId: targetSlideId });
+          console.log(`[ProcessWithAssistant] Queuing shape ${selectedShape.id} for extraction with slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
+        }
+
+        console.log(`[ProcessWithAssistant] About to extract text from ${shapesToCheck.length} selected shapes`);
+
+        // Use the safe extraction function
+        const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+
+        console.log(`[ProcessWithAssistant] Extracted blocks:`, extractedBlocks.map(b => ({
+          shapeId: b.shapeId,
+          slideId: b.slideId,
+          slideIndex: b.slideIndex,
+          textPreview: b.originalText.substring(0, 30)
+        })));
+
+        // Mark as selection for later processing (but keep slideIndex!)
+        for (let block of extractedBlocks) {
+          block.isSelection = true;
+          // DON'T set slideIndex to null - we need it for updates!
+        }
+
+        textBlocksToProcess = extractedBlocks;
+      } else {
+        // Check for selected text range
+        const selectedTextRange = context.presentation.getSelectedTextRange();
+        selectedTextRange.load("text");
+        await context.sync();
+
+        if (selectedTextRange.text && selectedTextRange.text.trim()) {
+          // For selected text, we can't update it later, so just note it
+          textBlocksToProcess.push({
+            slideIndex: null,
+            shapeId: null,
+            originalText: selectedTextRange.text,
+            isSelectedText: true
+          });
+        }
+      }
+      
+      console.log(`[ProcessWithAssistant] Extracted ${textBlocksToProcess.length} text blocks from selection`);
+    }
+
+    // Check if we have text blocks to process
     if (textBlocksToProcess.length === 0) {
       console.log('[ProcessWithAssistant] No text blocks found to process');
       document.getElementById("status").innerHTML = `
