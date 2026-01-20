@@ -306,11 +306,11 @@ async function loadAssistants() {
 // Returns an array of objects with slideIndex, shapeId, and originalText
 async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) {
   const textBlocks = [];
-  
+
   if (!shapes || shapes.length === 0) {
     return textBlocks;
   }
-  
+
   console.log(`[safeExtractText] Processing ${shapes.length} shapes`);
   
   // First, load all shape types and IDs in one batch
@@ -473,6 +473,7 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
               if (text.trim()) {
                 textBlocks.push({
                   slideIndex: item.slideIndex + slideIndexOffset,
+                  slideId: item.slideId,  // Store slide ID for unique identification
                   shapeId: item.shape.id,
                   originalText: text
                 });
@@ -628,12 +629,18 @@ async function processWithAssistant(assistantId, instructions, scope) {
       
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
 
+      // First load slide IDs
+      for (let slide of presentation.slides.items) {
+        slide.load("id");
+      }
+      await context.sync();
+
       // Prepare shapes for safe extraction
       const shapesToCheck = [];
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
         for (let shape of slide.shapes.items) {
-          shapesToCheck.push({ shape, slideIndex });
+          shapesToCheck.push({ shape, slideIndex, slideId: slide.id });
         }
       }
       
@@ -756,18 +763,20 @@ async function processWithAssistant(assistantId, instructions, scope) {
         throw new Error("Could not determine the current slide");
       }
 
-      // Load all shapes from the target slide
+      // Load all shapes from the target slide and its ID
       console.log(`[ProcessWithAssistant] Loading shapes from slide ${targetSlideIndex + 1}`);
+      targetSlide.load("id");
       targetSlide.shapes.load("items");
       await context.sync();
-      
+
       const totalShapes = targetSlide.shapes.items.length;
-      console.log(`[ProcessWithAssistant] Found ${totalShapes} shapes on current slide`);
+      const targetSlideId = targetSlide.id;
+      console.log(`[ProcessWithAssistant] Found ${totalShapes} shapes on current slide (ID: ${targetSlideId})`);
 
       // Prepare shapes for safe extraction
       const shapesToCheck = [];
       for (let shape of targetSlide.shapes.items) {
-        shapesToCheck.push({ shape, slideIndex: targetSlideIndex });
+        shapesToCheck.push({ shape, slideIndex: targetSlideIndex, slideId: targetSlideId });
       }
       
       console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
@@ -827,28 +836,50 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
         await context.sync();
 
-        // Build a map of shapeId -> slideIndex
-        const shapeToSlideMap = new Map();
-        for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
+        // Find which slide contains the selected shapes by checking which slide
+        // the shapes actually belong to (similar to current slide detection logic)
+        console.log(`[ProcessWithAssistant] Determining which slide contains selected shapes...`);
+
+        let targetSlideIndex = null;
+        const selectedShapeId = selectedShapes.items[0].id;
+
+        // Try each slide from the end backwards (user is more likely viewing later slides)
+        for (let slideIndex = presentation.slides.items.length - 1; slideIndex >= 0; slideIndex--) {
           const slide = presentation.slides.items[slideIndex];
+
+          // Check if this slide contains the selected shape
+          let foundShape = false;
           for (let shape of slide.shapes.items) {
-            // Check for duplicate shape IDs across slides (shouldn't happen but log it)
-            if (shapeToSlideMap.has(shape.id)) {
-              console.log(`[ProcessWithAssistant] WARNING: Shape ID ${shape.id} found on multiple slides: ${shapeToSlideMap.get(shape.id)} and ${slideIndex}`);
+            if (shape.id === selectedShapeId) {
+              foundShape = true;
+              break;
             }
-            shapeToSlideMap.set(shape.id, slideIndex);
+          }
+
+          if (foundShape) {
+            targetSlideIndex = slideIndex;
+            console.log(`[ProcessWithAssistant] Selected shapes found on slide ${slideIndex + 1} (searching backwards from end)`);
+            break;  // Found it - use this slide
           }
         }
 
-        // Prepare shapes for safe extraction with correct slideIndex
+        if (targetSlideIndex === null) {
+          console.log(`[ProcessWithAssistant] WARNING: Could not find selected shape ${selectedShapeId} on any slide, defaulting to slide 1`);
+          targetSlideIndex = 0;
+        }
+
+        // Load the slide ID for the target slide
+        const targetSlide = presentation.slides.items[targetSlideIndex];
+        targetSlide.load("id");
+        await context.sync();
+        const targetSlideId = targetSlide.id;
+        console.log(`[ProcessWithAssistant] Target slide ${targetSlideIndex + 1} has ID: ${targetSlideId}`);
+
+        // All selected shapes use the same slideIndex and slideId (they're all on the same slide)
         const shapesToCheck = [];
         for (let selectedShape of selectedShapes.items) {
-          const slideIndex = shapeToSlideMap.get(selectedShape.id);
-          if (slideIndex === undefined) {
-            console.log(`[ProcessWithAssistant] WARNING: Selected shape ${selectedShape.id} not found in any slide, using index 0`);
-          }
-          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} is on slide ${slideIndex !== undefined ? slideIndex + 1 : '?'}`);
-          shapesToCheck.push({ shape: selectedShape, slideIndex: slideIndex ?? 0 });
+          shapesToCheck.push({ shape: selectedShape, slideIndex: targetSlideIndex, slideId: targetSlideId });
+          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} → slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
         }
 
         // Use the safe extraction function
@@ -978,6 +1009,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
             newText: lastAgentMessage.content
           };
         }
+
+        // Log why we're returning null
+        console.log(`[ProcessWithAssistant] No agent response for text block ${index}:`,
+          !lastAgentMessage ? 'No agent message found' :
+          !lastAgentMessage.content ? 'Agent message has no content' :
+          'Unknown reason');
         return null;
       } catch (error) {
         console.error(`Error processing text block ${index}: ${error.message}`);
@@ -1051,6 +1088,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
       presentation.slides.load("items");
       await context.sync();
 
+      // Load slide IDs
+      for (let slide of presentation.slides.items) {
+        slide.load("id");
+      }
+      await context.sync();
+
       // Load all shapes with their IDs to build a lookup map
       for (let slide of presentation.slides.items) {
         slide.shapes.load("items");
@@ -1065,18 +1108,29 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
       await context.sync();
 
-      // Build a map of shape ID -> slideIndex for quick lookup
-      const shapeToSlideMap = new Map();
+      // Build a composite key map: {slideId:shapeId} -> {shape, slideIndex}
+      // This handles duplicate shape IDs across slides (which happens when duplicating slides)
+      const compositeKeyMap = new Map();
+      const shapeToSlideMap = new Map(); // Keep legacy map for results without slideId
+
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
+        const slideId = slide.id;
+
         for (let shape of slide.shapes.items) {
-          shapeToSlideMap.set(shape.id, slideIndex);
+          const compositeKey = `${slideId}:${shape.id}`;
+          compositeKeyMap.set(compositeKey, { shape, slideIndex, slideId });
+
+          // Legacy map (will have collisions if shape IDs are duplicated)
+          if (!shapeToSlideMap.has(shape.id)) {
+            shapeToSlideMap.set(shape.id, slideIndex);
+          }
         }
       }
 
-      console.log(`[ProcessWithAssistant] Created shape-to-slide map with ${shapeToSlideMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeToSlideMap.keys()).slice(0, 10));
-      console.log('[ProcessWithAssistant] Looking for shape IDs:', processedResults.map(r => `${r.shapeId} (slide ${r.slideIndex})`));
+      console.log(`[ProcessWithAssistant] Created composite key map with ${compositeKeyMap.size} shapes`);
+      console.log('[ProcessWithAssistant] Sample composite keys:', Array.from(compositeKeyMap.keys()).slice(0, 5));
+      console.log('[ProcessWithAssistant] Looking for results:', processedResults.map(r => `shape ${r.shapeId} on slide ${r.slideIndex} (slideId: ${r.slideId})`).slice(0, 5));
 
       // Filter out results we can update
       const resultsToUpdate = processedResults.filter(r => {
@@ -1089,10 +1143,19 @@ async function processWithAssistant(assistantId, instructions, scope) {
           return false;
         }
 
-        // Check if shape exists in map OR if we have a slideIndex to try
+        // Check if we can locate the shape using composite key
+        if (r.slideId && r.shapeId) {
+          const compositeKey = `${r.slideId}:${r.shapeId}`;
+          if (compositeKeyMap.has(compositeKey)) {
+            return true;
+          }
+          console.log(`[ProcessWithAssistant] Composite key ${compositeKey} not found in map`);
+        }
+
+        // Fallback: Check if shape exists in legacy map OR if we have a slideIndex to try
         if (!shapeToSlideMap.has(r.shapeId)) {
           if (r.slideIndex !== null && r.slideIndex !== undefined) {
-            console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not in map, but has slideIndex ${r.slideIndex} - will try to find it`);
+            console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not in legacy map, but has slideIndex ${r.slideIndex} - will try to find it`);
             return true; // We'll try to find it using slideIndex
           }
           console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not found and no slideIndex available`);
@@ -1104,17 +1167,30 @@ async function processWithAssistant(assistantId, instructions, scope) {
       console.log(`[ProcessWithAssistant] Will update ${resultsToUpdate.length} shapes`);
 
       // Get unique slide indices we need to update
-      // IMPORTANT: Use r.slideIndex (from extraction phase), NOT the shapeToSlideMap!
-      // The shape's location is recorded during extraction and should be trusted.
+      // Use composite key first, then fallback to slideIndex from extraction
       const slideIndices = new Set();
       for (let r of resultsToUpdate) {
-        // Prefer the slideIndex from extraction phase
-        const slideIdx = r.slideIndex ?? shapeToSlideMap.get(r.shapeId);
+        let slideIdx = null;
+
+        // Try composite key first (most reliable)
+        if (r.slideId && r.shapeId) {
+          const compositeKey = `${r.slideId}:${r.shapeId}`;
+          const lookupResult = compositeKeyMap.get(compositeKey);
+          if (lookupResult) {
+            slideIdx = lookupResult.slideIndex;
+          }
+        }
+
+        // Fallback to extraction phase slideIndex
+        if (slideIdx === null) {
+          slideIdx = r.slideIndex ?? shapeToSlideMap.get(r.shapeId);
+        }
+
         if (slideIdx !== null && slideIdx !== undefined) {
           slideIndices.add(slideIdx);
         }
       }
-      console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides (from extraction phase):`, Array.from(slideIndices));
+      console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides:`, Array.from(slideIndices));
       console.log(`[ProcessWithAssistant] Total slides in presentation: ${presentation.slides.items.length}`);
 
       // Validate all slide indices are within bounds
@@ -1162,17 +1238,33 @@ async function processWithAssistant(assistantId, instructions, scope) {
         // Continue anyway - we'll check for textFrame existence later
       }
 
-      // Build a fresh ID-to-shape map
-      const freshShapeMap = new Map();
+      // Build fresh maps with composite keys
+      const freshCompositeMap = new Map();
+      const freshShapeMap = new Map(); // Legacy map for fallback
+
       for (let slideIndex of validSlideIndices) {
         const slide = presentation.slides.items[slideIndex];
+        slide.load("id"); // Make sure we have the slide ID
+      }
+      await context.sync();
+
+      for (let slideIndex of validSlideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        const slideId = slide.id;
+
         for (let shape of slide.shapes.items) {
-          freshShapeMap.set(shape.id, shape);
+          const compositeKey = `${slideId}:${shape.id}`;
+          freshCompositeMap.set(compositeKey, { shape, slideIndex, slideId });
+
+          // Legacy map (for fallback)
+          if (!freshShapeMap.has(shape.id)) {
+            freshShapeMap.set(shape.id, shape);
+          }
         }
       }
 
-      console.log(`[ProcessWithAssistant] Created fresh shape map with ${freshShapeMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Fresh shape IDs:', Array.from(freshShapeMap.keys()).slice(0, 10));
+      console.log(`[ProcessWithAssistant] Created fresh composite map with ${freshCompositeMap.size} shapes`);
+      console.log('[ProcessWithAssistant] Sample fresh composite keys:', Array.from(freshCompositeMap.keys()).slice(0, 5));
 
       // Apply updates using the fresh shape references
       let updatedCount = 0;
@@ -1180,30 +1272,51 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       for (let result of resultsToUpdate) {
         try {
-          let shape = freshShapeMap.get(result.shapeId);
+          let shape = null;
+          let actualSlideIndex = null;
 
+          // Method 1: Try composite key lookup (most reliable)
+          if (result.slideId && result.shapeId) {
+            const compositeKey = `${result.slideId}:${result.shapeId}`;
+            const lookupResult = freshCompositeMap.get(compositeKey);
+            if (lookupResult) {
+              shape = lookupResult.shape;
+              actualSlideIndex = lookupResult.slideIndex;
+              console.log(`[ProcessWithAssistant] Found shape using composite key ${compositeKey} on slide ${actualSlideIndex + 1}`);
+            } else {
+              console.log(`[ProcessWithAssistant] Composite key ${compositeKey} not in fresh map`);
+            }
+          }
+
+          // Method 2: Fallback to legacy shape ID lookup
           if (!shape) {
-            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not in fresh map, checking slide ${result.slideIndex}`);
+            shape = freshShapeMap.get(result.shapeId);
+            if (shape) {
+              actualSlideIndex = result.slideIndex; // Use extraction phase slideIndex
+              console.log(`[ProcessWithAssistant] Found shape ${result.shapeId} using legacy map`);
+            }
+          }
 
-            // Try to find it on the expected slide
-            if (result.slideIndex !== null && result.slideIndex !== undefined && result.slideIndex < presentation.slides.items.length) {
-              const targetSlide = presentation.slides.items[result.slideIndex];
+          // Method 3: Try to find it on the expected slide
+          if (!shape && result.slideIndex !== null && result.slideIndex !== undefined && result.slideIndex < presentation.slides.items.length) {
+            console.log(`[ProcessWithAssistant] Shape not in maps, checking slide ${result.slideIndex}`);
+            const targetSlide = presentation.slides.items[result.slideIndex];
 
-              // Search for the shape by ID on this specific slide
-              for (let s of targetSlide.shapes.items) {
-                if (s.id === result.shapeId) {
-                  shape = s;
-                  console.log(`[ProcessWithAssistant] Found shape ${result.shapeId} on slide ${result.slideIndex}`);
-                  break;
-                }
+            // Search for the shape by ID on this specific slide
+            for (let s of targetSlide.shapes.items) {
+              if (s.id === result.shapeId) {
+                shape = s;
+                actualSlideIndex = result.slideIndex;
+                console.log(`[ProcessWithAssistant] Found shape ${result.shapeId} on slide ${result.slideIndex}`);
+                break;
               }
             }
+          }
 
-            if (!shape) {
-              console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not found anywhere`);
-              failedCount++;
-              continue;
-            }
+          if (!shape) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} (slideId: ${result.slideId}) not found anywhere`);
+            failedCount++;
+            continue;
           }
 
           // textFrame is already loaded, so we can check it directly
@@ -1235,7 +1348,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
           // Set the new text
           const newText = result.newText.trim();
-          const slideNum = result.slideIndex !== null && result.slideIndex !== undefined ? result.slideIndex + 1 : '?';
+          const slideNum = actualSlideIndex !== null && actualSlideIndex !== undefined ? actualSlideIndex + 1 : '?';
           console.log(`[ProcessWithAssistant] Updating shape ${result.shapeId} on slide ${slideNum}: "${newText.substring(0, 50)}..."`);
           shape.textFrame.textRange.text = newText;
           await context.sync();
