@@ -1000,20 +1000,34 @@ async function processWithAssistant(assistantId, instructions, scope) {
           }
           await context.sync();
 
-          // Find which slide contains the selected shape
-          let foundSlideIndex = null;
-          let foundSlideId = null;
-
+          // Find ALL slides that contain this shape ID (to detect duplicates)
+          const slidesWithShape = [];
           for (let i = 0; i < presentation.slides.items.length; i++) {
             const slide = presentation.slides.items[i];
             const shapeIds = slide.shapes.items.map(s => s.id);
 
             if (shapeIds.includes(selectedShapeId)) {
-              foundSlideIndex = i;
-              foundSlideId = slide.id;
-              console.log(`[ProcessWithAssistant] ✓ Found shape ${selectedShapeId} on slide ${i + 1} (ID: ${foundSlideId})`);
-              break;
+              slidesWithShape.push({ index: i, id: slide.id });
             }
+          }
+
+          console.log(`[ProcessWithAssistant] Shape ${selectedShapeId} found on ${slidesWithShape.length} slide(s):`,
+            slidesWithShape.map(s => `slide ${s.index + 1} (ID: ${s.id})`).join(', '));
+
+          // Find which slide contains the selected shape
+          let foundSlideIndex = null;
+          let foundSlideId = null;
+
+          if (slidesWithShape.length > 1) {
+            // Multiple slides have this shape ID - ambiguous!
+            console.log(`[ProcessWithAssistant] ⚠️ WARNING: Shape ${selectedShapeId} exists on multiple slides due to duplication. Cannot determine correct slide reliably.`);
+
+            // Since we can't reliably determine which slide, show error to user
+            throw new Error(`The selected shape exists on multiple slides (${slidesWithShape.map(s => s.index + 1).join(', ')}). PowerPoint reuses shape IDs when duplicating slides, making it impossible to determine which shape you selected. Try using "Current Slide" scope instead.`);
+          } else if (slidesWithShape.length === 1) {
+            foundSlideIndex = slidesWithShape[0].index;
+            foundSlideId = slidesWithShape[0].id;
+            console.log(`[ProcessWithAssistant] ✓ Found shape ${selectedShapeId} on slide ${foundSlideIndex + 1} (ID: ${foundSlideId})`);
           }
 
           if (foundSlideIndex !== null) {
