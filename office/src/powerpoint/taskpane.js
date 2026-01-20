@@ -973,72 +973,53 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
         await context.sync();
 
-        const slideShapeIds = targetSlide.shapes.items.map(s => s.id);
-        console.log(`[ProcessWithAssistant] Target slide ${targetSlideIndex + 1} contains shape IDs:`, slideShapeIds);
+        // Use the official API method to get the parent slide of the selected shape
+        // This is much more reliable than searching through slides by ID
+        console.log('[ProcessWithAssistant] Using getParentSlide() to determine which slide contains the selected shape');
 
-        // Check if selected shapes are on this slide
-        const selectedShapeId = selectedShapes.items[0].id;
-        const isOnThisSlide = slideShapeIds.includes(selectedShapeId);
-        console.log(`[ProcessWithAssistant] Selected shape ${selectedShapeId} is ${isOnThisSlide ? 'ON' : 'NOT ON'} target slide ${targetSlideIndex + 1}`);
+        const selectedShape = selectedShapes.items[0];
+        const actualParentSlide = selectedShape.getParentSlideOrNullObject();
+        actualParentSlide.load("id");
+        await context.sync();
 
-        // If the shape is NOT on the detected slide, we need to find which slide it's actually on
-        if (!isOnThisSlide) {
-          console.log('[ProcessWithAssistant] Shape not on detected slide - searching all slides to find correct one');
+        if (actualParentSlide.isNullObject) {
+          throw new Error("Selected shape does not belong to any slide");
+        }
 
-          // Load all slides and their shapes
-          for (let slide of presentation.slides.items) {
-            slide.load("id");
-            slide.shapes.load("items");
-          }
-          await context.sync();
+        const actualParentSlideId = actualParentSlide.id;
+        console.log(`[ProcessWithAssistant] Selected shape's actual parent slide ID: ${actualParentSlideId}`);
 
-          // Load all shape IDs
-          for (let slide of presentation.slides.items) {
-            for (let shape of slide.shapes.items) {
-              shape.load("id");
-            }
-          }
-          await context.sync();
+        // Find the index of the actual parent slide
+        let actualSlideIndex = null;
+        for (let i = 0; i < presentation.slides.items.length; i++) {
+          presentation.slides.items[i].load("id");
+        }
+        await context.sync();
 
-          // Find ALL slides that contain this shape ID (to detect duplicates)
-          const slidesWithShape = [];
-          for (let i = 0; i < presentation.slides.items.length; i++) {
-            const slide = presentation.slides.items[i];
-            const shapeIds = slide.shapes.items.map(s => s.id);
-
-            if (shapeIds.includes(selectedShapeId)) {
-              slidesWithShape.push({ index: i, id: slide.id });
-            }
-          }
-
-          console.log(`[ProcessWithAssistant] Shape ${selectedShapeId} found on ${slidesWithShape.length} slide(s):`,
-            slidesWithShape.map(s => `slide ${s.index + 1} (ID: ${s.id})`).join(', '));
-
-          // Find which slide contains the selected shape
-          let foundSlideIndex = null;
-          let foundSlideId = null;
-
-          if (slidesWithShape.length > 1) {
-            // Multiple slides have this shape ID - ambiguous!
-            console.log(`[ProcessWithAssistant] ⚠️ WARNING: Shape ${selectedShapeId} exists on multiple slides due to duplication. Cannot determine correct slide reliably.`);
-
-            // Since we can't reliably determine which slide, show error to user
-            throw new Error(`The selected shape exists on multiple slides (${slidesWithShape.map(s => s.index + 1).join(', ')}). PowerPoint reuses shape IDs when duplicating slides, making it impossible to determine which shape you selected. Try using "Current Slide" scope instead.`);
-          } else if (slidesWithShape.length === 1) {
-            foundSlideIndex = slidesWithShape[0].index;
-            foundSlideId = slidesWithShape[0].id;
-            console.log(`[ProcessWithAssistant] ✓ Found shape ${selectedShapeId} on slide ${foundSlideIndex + 1} (ID: ${foundSlideId})`);
-          }
-
-          if (foundSlideIndex !== null) {
-            targetSlideIndex = foundSlideIndex;
-            targetSlideId = foundSlideId;
-            targetSlide = presentation.slides.items[foundSlideIndex];
-            console.log(`[ProcessWithAssistant] Updated target to slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
-          } else {
-            throw new Error(`Could not find shape ${selectedShapeId} on any slide`);
+        for (let i = 0; i < presentation.slides.items.length; i++) {
+          if (presentation.slides.items[i].id === actualParentSlideId) {
+            actualSlideIndex = i;
+            break;
           }
         }
+
+        if (actualSlideIndex === null) {
+          throw new Error("Could not find parent slide in presentation");
+        }
+
+        console.log(`[ProcessWithAssistant] Selected shape belongs to slide ${actualSlideIndex + 1} (index ${actualSlideIndex})`);
+
+        // Check if this differs from the thumbnail-selected slide
+        if (actualSlideIndex !== targetSlideIndex) {
+          console.log(`[ProcessWithAssistant] ⚠️ NOTE: Thumbnail shows slide ${targetSlideIndex + 1}, but selected shape is actually on slide ${actualSlideIndex + 1}`);
+        }
+
+        // Use the actual parent slide
+        targetSlideIndex = actualSlideIndex;
+        targetSlideId = actualParentSlideId;
+        targetSlide = presentation.slides.items[actualSlideIndex];
+        console.log(`[ProcessWithAssistant] Using slide ${targetSlideIndex + 1} (ID: ${targetSlideId}) as the correct slide`);
+
 
         // All selected shapes use the same slideIndex and slideId
         const shapesToCheck = [];
