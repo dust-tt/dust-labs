@@ -426,12 +426,71 @@ async function extractTextFromSlideShapes(context, slideIndex) {
     const shape = slide.shapes.items[i];
 
     try {
-      shape.load("id");
+      shape.load("id,type");
       await context.sync();
 
       const shapeId = shape.id;
-      console.log(`[Extract] Checking shape ${i + 1}/${slide.shapes.items.length} (ID: ${shapeId})`);
+      const shapeType = shape.type;
+      console.log(`[Extract] Checking shape ${i + 1}/${slide.shapes.items.length} (ID: ${shapeId}, Type: ${shapeType})`);
 
+      // Check if this is a group - if so, we need to extract from grouped shapes
+      if (shapeType === "Group" || shapeType === PowerPoint.ShapeType.group) {
+        console.log(`[Extract]   Shape ${shapeId} is a group - checking grouped shapes`);
+        try {
+          shape.load("groupItems");
+          await context.sync();
+
+          if (shape.groupItems && shape.groupItems.items) {
+            console.log(`[Extract]   Group has ${shape.groupItems.items.length} items`);
+
+            // Extract text from each shape in the group
+            for (let j = 0; j < shape.groupItems.items.length; j++) {
+              const groupedShape = shape.groupItems.items[j];
+              try {
+                groupedShape.load("id");
+                await context.sync();
+
+                groupedShape.load("textFrame");
+                await context.sync();
+
+                if (groupedShape.textFrame) {
+                  groupedShape.textFrame.load("hasText");
+                  await context.sync();
+
+                  if (groupedShape.textFrame.hasText) {
+                    groupedShape.textFrame.load("textRange");
+                    await context.sync();
+
+                    if (groupedShape.textFrame.textRange) {
+                      groupedShape.textFrame.textRange.load("text");
+                      await context.sync();
+
+                      const text = groupedShape.textFrame.textRange.text?.trim();
+                      if (text) {
+                        console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+                        textBlocks.push({
+                          slideIndex,
+                          slideId,
+                          shapeId: groupedShape.id,
+                          originalText: text,
+                          isSlideScope: true
+                        });
+                      }
+                    }
+                  }
+                }
+              } catch (groupError) {
+                console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupError.message}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`[Extract]   Error accessing group items: ${e.message}`);
+        }
+        continue; // Skip to next shape
+      }
+
+      // Not a group - extract text normally
       shape.load("textFrame");
       await context.sync();
 
