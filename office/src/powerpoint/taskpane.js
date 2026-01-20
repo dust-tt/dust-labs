@@ -779,34 +779,85 @@ async function processWithAssistant(assistantId, instructions, scope) {
         throw new Error("Could not determine the current slide");
       }
 
-      // Load all shapes from the target slide and its ID
-      console.log(`[ProcessWithAssistant] Loading shapes from slide ${targetSlideIndex + 1}`);
-      targetSlide.load("id");
-      targetSlide.shapes.load("items");
+      // Extract text from the current slide directly (inline extraction for better reliability)
+      console.log(`[ProcessWithAssistant] Extracting text from slide ${targetSlideIndex + 1}`);
+      const targetSlideId = targetSlide.id;
+
+      // Reload the slide shapes fresh
+      const freshSlide = presentation.slides.items[targetSlideIndex];
+      freshSlide.shapes.load("items");
       await context.sync();
 
-      const totalShapes = targetSlide.shapes.items.length;
-      const targetSlideId = targetSlide.id;
+      const totalShapes = freshSlide.shapes.items.length;
       console.log(`[ProcessWithAssistant] Found ${totalShapes} shapes on current slide (ID: ${targetSlideId})`);
 
-      // Prepare shapes for safe extraction
-      const shapesToCheck = [];
-      for (let shape of targetSlide.shapes.items) {
-        shapesToCheck.push({ shape, slideIndex: targetSlideIndex, slideId: targetSlideId });
+      // Load all shape IDs and textFrames in one go
+      for (let shape of freshSlide.shapes.items) {
+        shape.load("id,textFrame");
       }
-      
-      console.log(`[ProcessWithAssistant] Checking ${shapesToCheck.length} shapes for text`);
-      
-      // Use the safe extraction function
-      const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
-      
-      // Mark as slide scope for later processing
-      for (let block of extractedBlocks) {
-        block.isSlideScope = true;
+      await context.sync();
+
+      console.log(`[ProcessWithAssistant] Loaded ${freshSlide.shapes.items.length} shapes with textFrames`);
+
+      // Extract text from shapes that have textFrames
+      const extractedBlocks = [];
+      for (let shape of freshSlide.shapes.items) {
+        try {
+          if (shape.textFrame) {
+            shape.textFrame.load("hasText");
+          }
+        } catch (e) {
+          // Shape doesn't support textFrame
+        }
       }
-      
+      await context.sync();
+
+      // Now extract actual text
+      for (let shape of freshSlide.shapes.items) {
+        try {
+          if (shape.textFrame && shape.textFrame.hasText) {
+            shape.textFrame.load("textRange");
+          }
+        } catch (e) {
+          // Shape doesn't have text
+        }
+      }
+      await context.sync();
+
+      // Collect text blocks
+      for (let shape of freshSlide.shapes.items) {
+        try {
+          if (shape.textFrame && shape.textFrame.hasText && shape.textFrame.textRange) {
+            shape.textFrame.textRange.load("text");
+          }
+        } catch (e) {
+          // Skip
+        }
+      }
+      await context.sync();
+
+      // Build final text blocks array
+      for (let shape of freshSlide.shapes.items) {
+        try {
+          if (shape.textFrame && shape.textFrame.textRange && shape.textFrame.textRange.text) {
+            const text = shape.textFrame.textRange.text.trim();
+            if (text) {
+              extractedBlocks.push({
+                slideIndex: targetSlideIndex,
+                slideId: targetSlideId,
+                shapeId: shape.id,
+                originalText: text,
+                isSlideScope: true
+              });
+            }
+          }
+        } catch (e) {
+          // Skip shapes that fail
+        }
+      }
+
+      console.log(`[ProcessWithAssistant] Extracted ${extractedBlocks.length} text blocks from current slide`);
       textBlocksToProcess = extractedBlocks;
-      console.log(`[ProcessWithAssistant] Extracted ${textBlocksToProcess.length} text blocks from current slide`);
       if (textBlocksToProcess.length > 0) {
         console.log('[ProcessWithAssistant] First extracted block:', {
           shapeId: textBlocksToProcess[0].shapeId,
