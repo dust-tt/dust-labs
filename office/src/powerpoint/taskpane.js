@@ -658,55 +658,99 @@ async function processWithAssistant(assistantId, instructions, scope) {
       let targetSlide = null;
       let targetSlideIndex = -1;
 
+      // Load presentation slides first (needed for all methods)
+      const presentation = context.presentation;
+      presentation.slides.load("items");
+      await context.sync();
+
+      // Method 1: Try to find slide from selected shape (most reliable for PowerPoint Online)
       try {
-        // Try to get the active slide (works in both desktop and online PowerPoint)
-        console.log('[ProcessWithAssistant] Attempting to get active slide');
-        targetSlide = context.presentation.getActiveSlide();
-        targetSlide.load("id");
+        console.log('[ProcessWithAssistant] Checking for selected shapes to determine slide');
+        const selectedShapes = context.presentation.getSelectedShapes();
+        selectedShapes.load("items");
         await context.sync();
 
-        console.log('[ProcessWithAssistant] Found active slide, determining index');
+        if (selectedShapes.items && selectedShapes.items.length > 0) {
+          console.log(`[ProcessWithAssistant] Found ${selectedShapes.items.length} selected shapes, finding their slide`);
 
-        // Find the index of this slide
-        const presentation = context.presentation;
-        presentation.slides.load("items");
-        await context.sync();
+          // Load all shapes from all slides to find which slide contains the selected shape
+          for (let slide of presentation.slides.items) {
+            slide.shapes.load("items");
+          }
+          await context.sync();
 
-        for (let i = 0; i < presentation.slides.items.length; i++) {
-          if (presentation.slides.items[i].id === targetSlide.id) {
-            targetSlideIndex = i;
-            console.log(`[ProcessWithAssistant] Active slide is at index ${i} (slide ${i + 1})`);
-            break;
+          // Load IDs for selected shapes
+          for (let selectedShape of selectedShapes.items) {
+            selectedShape.load("id");
+          }
+          await context.sync();
+
+          // Find which slide contains the first selected shape
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            const slide = presentation.slides.items[i];
+            for (let shape of slide.shapes.items) {
+              shape.load("id");
+            }
+          }
+          await context.sync();
+
+          const selectedShapeId = selectedShapes.items[0].id;
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            const slide = presentation.slides.items[i];
+            const shapeIds = slide.shapes.items.map(s => s.id);
+            if (shapeIds.includes(selectedShapeId)) {
+              targetSlide = slide;
+              targetSlideIndex = i;
+              console.log(`[ProcessWithAssistant] Found slide from selected shape: slide ${i + 1}`);
+              break;
+            }
           }
         }
       } catch (e) {
-        console.log('[ProcessWithAssistant] getActiveSlide not available, trying getSelectedSlides:', e.message);
+        console.log('[ProcessWithAssistant] Could not determine slide from selected shapes:', e.message);
+      }
 
-        // Fallback: Try getSelectedSlides (older API)
+      // Method 2: Try getActiveSlide() (desktop PowerPoint)
+      if (!targetSlide) {
         try {
+          console.log('[ProcessWithAssistant] Attempting to get active slide');
+          targetSlide = context.presentation.getActiveSlide();
+          targetSlide.load("id");
+          await context.sync();
+
+          for (let i = 0; i < presentation.slides.items.length; i++) {
+            if (presentation.slides.items[i].id === targetSlide.id) {
+              targetSlideIndex = i;
+              console.log(`[ProcessWithAssistant] Active slide is at index ${i} (slide ${i + 1})`);
+              break;
+            }
+          }
+        } catch (e) {
+          console.log('[ProcessWithAssistant] getActiveSlide not available:', e.message);
+        }
+      }
+
+      // Method 3: Fallback to getSelectedSlides() (from thumbnail panel)
+      if (!targetSlide) {
+        try {
+          console.log('[ProcessWithAssistant] Trying getSelectedSlides (from thumbnail panel)');
           const selectedSlides = context.presentation.getSelectedSlides();
           selectedSlides.load("items");
           await context.sync();
 
           if (selectedSlides.items && selectedSlides.items.length > 0) {
             targetSlide = selectedSlides.items[0];
-            console.log('[ProcessWithAssistant] Found selected slide');
-
-            // Find the index of this slide
-            const presentation = context.presentation;
-            presentation.slides.load("items");
-            await context.sync();
 
             for (let i = 0; i < presentation.slides.items.length; i++) {
               if (presentation.slides.items[i].id === targetSlide.id) {
                 targetSlideIndex = i;
-                console.log(`[ProcessWithAssistant] Selected slide is at index ${i} (slide ${i + 1})`);
+                console.log(`[ProcessWithAssistant] Selected slide from thumbnail panel is at index ${i} (slide ${i + 1})`);
                 break;
               }
             }
           }
-        } catch (e2) {
-          console.log('[ProcessWithAssistant] getSelectedSlides also failed:', e2.message);
+        } catch (e) {
+          console.log('[ProcessWithAssistant] getSelectedSlides also failed:', e.message);
         }
       }
       
