@@ -312,6 +312,13 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
   }
 
   console.log(`[safeExtractText] Processing ${shapes.length} shapes`);
+
+  // Log what we're receiving
+  console.log('[safeExtractText] Input shapes:', shapes.map(s => ({
+    slideIndex: s.slideIndex,
+    slideId: s.slideId,
+    shapeInfo: s.shape ? 'shape object present' : 'NO SHAPE'
+  })));
   
   // First, load all shape types and IDs in one batch
   for (let item of shapes) {
@@ -322,6 +329,15 @@ async function safeExtractTextFromShapes(context, shapes, slideIndexOffset = 0) 
     }
   }
   await context.sync();
+
+  // Log what IDs we actually loaded
+  console.log('[safeExtractText] After loading, shape IDs are:', shapes.map(s => {
+    try {
+      return { id: s.shape.id, slideIndex: s.slideIndex, slideId: s.slideId };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }));
   
   // Identify text-capable shapes
   const textCapableShapes = [];
@@ -937,17 +953,40 @@ async function processWithAssistant(assistantId, instructions, scope) {
         const targetSlideId = targetSlide.id;
         console.log(`[ProcessWithAssistant] Using slide ${targetSlideIndex + 1} (ID: ${targetSlideId}) for selected shapes`);
 
-        // Load selected shape IDs
+        // Load selected shape IDs and verify them
         for (let selectedShape of selectedShapes.items) {
-          selectedShape.load("id");
+          selectedShape.load("id,name,type");
         }
         await context.sync();
+
+        console.log('[ProcessWithAssistant] Selected shapes details:');
+        for (let i = 0; i < selectedShapes.items.length; i++) {
+          const s = selectedShapes.items[i];
+          console.log(`  Shape ${i}: id="${s.id}", type="${s.type}", name="${s.name}"`);
+        }
+
+        // Verify: Check if this shape actually exists on the target slide
+        targetSlide.shapes.load("items");
+        await context.sync();
+        for (let shape of targetSlide.shapes.items) {
+          shape.load("id");
+        }
+        await context.sync();
+
+        const slideShapeIds = targetSlide.shapes.items.map(s => s.id);
+        console.log(`[ProcessWithAssistant] Target slide ${targetSlideIndex + 1} contains shape IDs:`, slideShapeIds);
+
+        // Check if selected shapes are on this slide
+        for (let selectedShape of selectedShapes.items) {
+          const isOnThisSlide = slideShapeIds.includes(selectedShape.id);
+          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} is ${isOnThisSlide ? 'ON' : 'NOT ON'} target slide ${targetSlideIndex + 1}`);
+        }
 
         // All selected shapes use the same slideIndex and slideId
         const shapesToCheck = [];
         for (let selectedShape of selectedShapes.items) {
           shapesToCheck.push({ shape: selectedShape, slideIndex: targetSlideIndex, slideId: targetSlideId });
-          console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} → slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
+          console.log(`[ProcessWithAssistant] Queuing shape ${selectedShape.id} for extraction with slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
         }
 
         console.log(`[ProcessWithAssistant] About to extract text from ${shapesToCheck.length} selected shapes`);
