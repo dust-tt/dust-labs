@@ -950,8 +950,17 @@ async function processWithAssistant(assistantId, instructions, scope) {
           console.log(`[ProcessWithAssistant] Selected shape ${selectedShape.id} → slide ${targetSlideIndex + 1} (ID: ${targetSlideId})`);
         }
 
+        console.log(`[ProcessWithAssistant] About to extract text from ${shapesToCheck.length} selected shapes`);
+
         // Use the safe extraction function
         const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+
+        console.log(`[ProcessWithAssistant] Extracted blocks:`, extractedBlocks.map(b => ({
+          shapeId: b.shapeId,
+          slideId: b.slideId,
+          slideIndex: b.slideIndex,
+          textPreview: b.originalText.substring(0, 30)
+        })));
 
         // Mark as selection for later processing (but keep slideIndex!)
         for (let block of extractedBlocks) {
@@ -1279,6 +1288,12 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
       await context.sync();
 
+      // Log how many shapes we found on each slide
+      for (let slideIndex of validSlideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        console.log(`[ProcessWithAssistant] Slide ${slideIndex} has ${slide.shapes.items.length} shapes after reload`);
+      }
+
       // Load all shape IDs on the needed slides (load IDs first, textFrame separately)
       for (let slideIndex of validSlideIndices) {
         const slide = presentation.slides.items[slideIndex];
@@ -1287,6 +1302,13 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
       }
       await context.sync();
+
+      // Log the shape IDs we found
+      for (let slideIndex of validSlideIndices) {
+        const slide = presentation.slides.items[slideIndex];
+        const shapeIds = slide.shapes.items.map(s => s.id);
+        console.log(`[ProcessWithAssistant] Slide ${slideIndex} shape IDs:`, shapeIds);
+      }
 
       // Now try to load textFrame (some shapes might not have it)
       for (let slideIndex of validSlideIndices) {
@@ -1332,7 +1354,11 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
 
       console.log(`[ProcessWithAssistant] Created fresh composite map with ${freshCompositeMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Sample fresh composite keys:', Array.from(freshCompositeMap.keys()).slice(0, 5));
+      console.log('[ProcessWithAssistant] All fresh composite keys:', Array.from(freshCompositeMap.keys()));
+
+      // Also log just the shape IDs for easier reading
+      const shapeIdsInFreshMap = Array.from(freshCompositeMap.keys()).map(k => k.split(':')[1]);
+      console.log('[ProcessWithAssistant] Shape IDs in fresh map:', shapeIdsInFreshMap);
 
       // Apply updates using the fresh shape references
       let updatedCount = 0;
