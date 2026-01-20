@@ -312,8 +312,9 @@ async function extractTextFromSelectedShapes(context) {
     throw new Error("No shapes selected");
   }
 
+  // Batch load id and type for all shapes
   for (let shape of selectedShapes.items) {
-    shape.load("id");
+    shape.load("id, type");
   }
   await context.sync();
 
@@ -341,12 +342,13 @@ async function extractTextFromSelectedShapes(context) {
     throw new Error("Could not determine slide index");
   }
 
+  if (processingCancelled) return [];
+
   const textBlocks = [];
   for (let shape of selectedShapes.items) {
-    try {
-      shape.load("type");
-      await context.sync();
+    if (processingCancelled) break;
 
+    try {
       // Handle grouped shapes using ShapeGroup API (PowerPointApi 1.8+)
       if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
         try {
@@ -361,7 +363,14 @@ async function extractTextFromSelectedShapes(context) {
               shape.group.shapes.load("items");
               await context.sync();
 
+              // Load ids for all grouped shapes
               for (const groupedShape of shape.group.shapes.items) {
+                groupedShape.load("id, type");
+              }
+              await context.sync();
+
+              for (const groupedShape of shape.group.shapes.items) {
+                if (processingCancelled) break;
                 const extracted = await extractTextFromShape(context, groupedShape, slideIndex, slideId, true, shape.id);
                 if (extracted) textBlocks.push({ ...extracted, isSelection: true });
               }
@@ -380,25 +389,18 @@ async function extractTextFromSelectedShapes(context) {
   return textBlocks;
 }
 
-// Helper to extract text from a single shape
+// Helper to extract text from a single shape (shape must already have id loaded)
 async function extractTextFromShape(context, shape, slideIndex, slideId, isGroupedShape, parentGroupId) {
   try {
-    shape.load("id, type");
-    await context.sync();
-
     if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) return null;
 
     shape.load("textFrame");
     await context.sync();
     if (!shape.textFrame) return null;
 
-    shape.textFrame.load("hasText");
+    shape.textFrame.load("hasText, textRange");
     await context.sync();
-    if (!shape.textFrame.hasText) return null;
-
-    shape.textFrame.load("textRange");
-    await context.sync();
-    if (!shape.textFrame.textRange) return null;
+    if (!shape.textFrame.hasText || !shape.textFrame.textRange) return null;
 
     shape.textFrame.textRange.load("text");
     await context.sync();
@@ -437,11 +439,19 @@ async function extractTextFromSlideShapes(context, slideIndex) {
   const slideId = slide.id;
   const textBlocks = [];
 
+  // Batch load all shape ids and types first
   for (const shape of slide.shapes.items) {
-    try {
-      shape.load("id, type");
-      await context.sync();
+    shape.load("id, type");
+  }
+  await context.sync();
 
+  // Check for cancellation
+  if (processingCancelled) return textBlocks;
+
+  for (const shape of slide.shapes.items) {
+    if (processingCancelled) break;
+
+    try {
       // Handle grouped shapes using ShapeGroup API (PowerPointApi 1.8+)
       if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
         try {
@@ -456,7 +466,14 @@ async function extractTextFromSlideShapes(context, slideIndex) {
               shape.group.shapes.load("items");
               await context.sync();
 
+              // Load ids for all grouped shapes
               for (const groupedShape of shape.group.shapes.items) {
+                groupedShape.load("id, type");
+              }
+              await context.sync();
+
+              for (const groupedShape of shape.group.shapes.items) {
+                if (processingCancelled) break;
                 const extracted = await extractTextFromShape(context, groupedShape, slideIndex, slideId, true, shape.id);
                 if (extracted) textBlocks.push({ ...extracted, isSlideScope: true });
               }
