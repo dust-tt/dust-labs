@@ -1088,14 +1088,17 @@ async function processWithAssistant(assistantId, instructions, scope) {
       console.log(`[ProcessWithAssistant] Will update ${resultsToUpdate.length} shapes`);
 
       // Get unique slide indices we need to update
+      // IMPORTANT: Use r.slideIndex (from extraction phase), NOT the shapeToSlideMap!
+      // The shape's location is recorded during extraction and should be trusted.
       const slideIndices = new Set();
       for (let r of resultsToUpdate) {
-        const slideIdx = shapeToSlideMap.get(r.shapeId) ?? r.slideIndex;
+        // Prefer the slideIndex from extraction phase
+        const slideIdx = r.slideIndex ?? shapeToSlideMap.get(r.shapeId);
         if (slideIdx !== null && slideIdx !== undefined) {
           slideIndices.add(slideIdx);
         }
       }
-      console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides:`, Array.from(slideIndices));
+      console.log(`[ProcessWithAssistant] Will reload ${slideIndices.size} slides (from extraction phase):`, Array.from(slideIndices));
       console.log(`[ProcessWithAssistant] Total slides in presentation: ${presentation.slides.items.length}`);
 
       // Validate all slide indices are within bounds
