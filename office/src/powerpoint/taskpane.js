@@ -1378,43 +1378,12 @@ function updateProgressDisplay() {
 async function countPresentationTextBlocks() {
   // Update status before entering PowerPoint.run
   document.getElementById("status").innerHTML = '<div class="spinner"></div> Loading presentation...';
-  
+
   return await PowerPoint.run(async (context) => {
-    // Get all slides in the presentation
-    const presentation = context.presentation;
-    presentation.slides.load("items");
-    await context.sync();
-    
-    const totalSlides = presentation.slides.items.length;
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Loading ${totalSlides} slides...`;
-    
-    // Load all shapes from all slides at once (batched for performance)
-    for (let slide of presentation.slides.items) {
-      slide.shapes.load("items");
-    }
-    await context.sync();
-    
-    // Count total shapes
-    let totalShapes = 0;
-    for (let slide of presentation.slides.items) {
-      totalShapes += slide.shapes.items.length;
-    }
-    
-    document.getElementById("status").innerHTML = `<div class="spinner"></div> Checking ${totalShapes} shapes across ${totalSlides} slides...`;
-    
-    // Prepare shapes for safe extraction
-    const shapesToCheck = [];
-    for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
-      const slide = presentation.slides.items[slideIndex];
-      for (let shape of slide.shapes.items) {
-        shapesToCheck.push({ shape, slideIndex });
-      }
-    }
-    
-    // Use the safe extraction function to get text blocks
-    const textBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
+    // Use the reliable extraction function
+    const textBlocks = await extractTextFromAllSlides(context);
     const textBlockCount = textBlocks.length;
-    
+
     document.getElementById("status").innerHTML = `<div class="spinner"></div> Found ${textBlockCount} text blocks`;
     return textBlockCount;
   });
