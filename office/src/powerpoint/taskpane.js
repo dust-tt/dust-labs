@@ -791,53 +791,94 @@ async function processWithAssistant(assistantId, instructions, scope) {
       const totalShapes = freshSlide.shapes.items.length;
       console.log(`[ProcessWithAssistant] Found ${totalShapes} shapes on current slide (ID: ${targetSlideId})`);
 
-      // Load all shape IDs and textFrames in one go
+      // Step 1: Load all shape IDs first (all shapes support this)
       for (let shape of freshSlide.shapes.items) {
-        shape.load("id,textFrame");
+        shape.load("id");
       }
       await context.sync();
 
-      console.log(`[ProcessWithAssistant] Loaded ${freshSlide.shapes.items.length} shapes with textFrames`);
+      console.log(`[ProcessWithAssistant] Loaded ${freshSlide.shapes.items.length} shape IDs:`, freshSlide.shapes.items.map(s => s.id));
 
-      // Extract text from shapes that have textFrames
-      const extractedBlocks = [];
+      // Step 2: Try to load textFrame for each shape individually
+      const shapesWithTextFrame = [];
       for (let shape of freshSlide.shapes.items) {
         try {
-          if (shape.textFrame) {
-            shape.textFrame.load("hasText");
-          }
+          shape.load("textFrame");
+          shapesWithTextFrame.push(shape);
         } catch (e) {
           // Shape doesn't support textFrame
         }
       }
-      await context.sync();
 
-      // Now extract actual text
-      for (let shape of freshSlide.shapes.items) {
+      // Sync and check which shapes actually have textFrame
+      try {
+        await context.sync();
+        console.log(`[ProcessWithAssistant] Successfully loaded textFrame for ${shapesWithTextFrame.length} shapes`);
+      } catch (e) {
+        console.log(`[ProcessWithAssistant] Error loading textFrames: ${e.message}`);
+      }
+
+      // Step 3: Load hasText for shapes with textFrame
+      const shapesWithText = [];
+      for (let shape of shapesWithTextFrame) {
+        try {
+          if (shape.textFrame) {
+            shape.textFrame.load("hasText");
+            shapesWithText.push(shape);
+          }
+        } catch (e) {
+          // Shape's textFrame doesn't support hasText
+        }
+      }
+
+      try {
+        await context.sync();
+        console.log(`[ProcessWithAssistant] Checked hasText for ${shapesWithText.length} shapes`);
+      } catch (e) {
+        console.log(`[ProcessWithAssistant] Error loading hasText: ${e.message}`);
+      }
+
+      // Step 4: Load textRange for shapes that have text
+      const shapesToExtract = [];
+      for (let shape of shapesWithText) {
         try {
           if (shape.textFrame && shape.textFrame.hasText) {
             shape.textFrame.load("textRange");
+            shapesToExtract.push(shape);
           }
         } catch (e) {
-          // Shape doesn't have text
+          // Skip
         }
       }
-      await context.sync();
 
-      // Collect text blocks
-      for (let shape of freshSlide.shapes.items) {
+      try {
+        await context.sync();
+        console.log(`[ProcessWithAssistant] Loaded textRange for ${shapesToExtract.length} shapes`);
+      } catch (e) {
+        console.log(`[ProcessWithAssistant] Error loading textRange: ${e.message}`);
+      }
+
+      // Step 5: Load actual text
+      for (let shape of shapesToExtract) {
         try {
-          if (shape.textFrame && shape.textFrame.hasText && shape.textFrame.textRange) {
+          if (shape.textFrame && shape.textFrame.textRange) {
             shape.textFrame.textRange.load("text");
           }
         } catch (e) {
           // Skip
         }
       }
-      await context.sync();
 
-      // Build final text blocks array
-      for (let shape of freshSlide.shapes.items) {
+      try {
+        await context.sync();
+        console.log(`[ProcessWithAssistant] Loaded text content for shapes`);
+      } catch (e) {
+        console.log(`[ProcessWithAssistant] Error loading text: ${e.message}`);
+      }
+
+      // Step 6: Build final text blocks array
+      const extractedBlocks = [];
+      for (let shape of shapesToExtract) {
         try {
           if (shape.textFrame && shape.textFrame.textRange && shape.textFrame.textRange.text) {
             const text = shape.textFrame.textRange.text.trim();
