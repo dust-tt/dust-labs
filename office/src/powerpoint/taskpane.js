@@ -798,7 +798,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
     } else if (scope === "selection") {
       console.log('[ProcessWithAssistant] Processing selection');
       document.getElementById("status").innerHTML = `<div class="spinner"></div> Scanning selected text...`;
-      
+
       // Handle selected shapes/text
       console.log('[ProcessWithAssistant] Getting selected shapes');
       const selectedShapes = context.presentation.getSelectedShapes();
@@ -807,21 +807,53 @@ async function processWithAssistant(assistantId, instructions, scope) {
       console.log(`[ProcessWithAssistant] Found ${selectedShapes.items.length} selected shapes`);
 
       if (selectedShapes.items.length > 0) {
-        // Prepare shapes for safe extraction
-        const shapesToCheck = [];
-        for (let i = 0; i < selectedShapes.items.length; i++) {
-          shapesToCheck.push({ shape: selectedShapes.items[i], slideIndex: 0 });
+        // Find which slide contains these selected shapes
+        const presentation = context.presentation;
+        presentation.slides.load("items");
+        await context.sync();
+
+        // Load all shapes from all slides
+        for (let slide of presentation.slides.items) {
+          slide.shapes.load("items");
         }
-        
+        await context.sync();
+
+        // Load IDs for all shapes
+        for (let slide of presentation.slides.items) {
+          for (let shape of slide.shapes.items) {
+            shape.load("id");
+          }
+        }
+        for (let selectedShape of selectedShapes.items) {
+          selectedShape.load("id");
+        }
+        await context.sync();
+
+        // Build a map of shapeId -> slideIndex
+        const shapeToSlideMap = new Map();
+        for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
+          const slide = presentation.slides.items[slideIndex];
+          for (let shape of slide.shapes.items) {
+            shapeToSlideMap.set(shape.id, slideIndex);
+          }
+        }
+
+        // Prepare shapes for safe extraction with correct slideIndex
+        const shapesToCheck = [];
+        for (let selectedShape of selectedShapes.items) {
+          const slideIndex = shapeToSlideMap.get(selectedShape.id) ?? 0;
+          shapesToCheck.push({ shape: selectedShape, slideIndex });
+        }
+
         // Use the safe extraction function
         const extractedBlocks = await safeExtractTextFromShapes(context, shapesToCheck);
-        
-        // Mark as selection for later processing
+
+        // Mark as selection for later processing (but keep slideIndex!)
         for (let block of extractedBlocks) {
           block.isSelection = true;
-          block.slideIndex = null; // Clear slideIndex for selections
+          // DON'T set slideIndex to null - we need it for updates!
         }
-        
+
         textBlocksToProcess = extractedBlocks;
       } else {
         // Check for selected text range
@@ -1017,18 +1049,17 @@ async function processWithAssistant(assistantId, instructions, scope) {
       }
       await context.sync();
 
-      // Build a map of shape locations (slideIndex, shapeIndex) by ID
-      const shapeLocationMap = new Map();
+      // Build a map of shape ID -> slideIndex for quick lookup
+      const shapeToSlideMap = new Map();
       for (let slideIndex = 0; slideIndex < presentation.slides.items.length; slideIndex++) {
         const slide = presentation.slides.items[slideIndex];
-        for (let shapeIndex = 0; shapeIndex < slide.shapes.items.length; shapeIndex++) {
-          const shapeId = slide.shapes.items[shapeIndex].id;
-          shapeLocationMap.set(shapeId, { slideIndex, shapeIndex });
+        for (let shape of slide.shapes.items) {
+          shapeToSlideMap.set(shape.id, slideIndex);
         }
       }
 
-      console.log(`[ProcessWithAssistant] Created shape location map with ${shapeLocationMap.size} shapes`);
-      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeLocationMap.keys()).slice(0, 5));
+      console.log(`[ProcessWithAssistant] Created shape-to-slide map with ${shapeToSlideMap.size} shapes`);
+      console.log('[ProcessWithAssistant] Shape IDs in map:', Array.from(shapeToSlideMap.keys()).slice(0, 5));
       console.log('[ProcessWithAssistant] Looking for shape IDs:', processedResults.map(r => r.shapeId).slice(0, 5));
 
       // Filter out results we can update
@@ -1037,7 +1068,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
           console.log("[ProcessWithAssistant] Skipping selected text");
           return false;
         }
-        if (!r.shapeId || !shapeLocationMap.has(r.shapeId)) {
+        if (!r.shapeId || !shapeToSlideMap.has(r.shapeId)) {
           console.log(`[ProcessWithAssistant] Shape ${r.shapeId} not found in map`);
           return false;
         }
@@ -1046,15 +1077,41 @@ async function processWithAssistant(assistantId, instructions, scope) {
 
       console.log(`[ProcessWithAssistant] Will update ${resultsToUpdate.length} shapes`);
 
-      // Apply updates one by one (simpler and more reliable)
+      // Apply updates one by one (finding shapes by ID, not index)
       let updatedCount = 0;
       let failedCount = 0;
 
       for (let result of resultsToUpdate) {
         try {
-          const location = shapeLocationMap.get(result.shapeId);
-          const slide = presentation.slides.items[location.slideIndex];
-          const shape = slide.shapes.items[location.shapeIndex];
+          const slideIndex = shapeToSlideMap.get(result.shapeId);
+          const slide = presentation.slides.items[slideIndex];
+
+          // Reload shapes on this slide to get fresh references
+          slide.shapes.load("items");
+          await context.sync();
+
+          // Load IDs for all shapes on this slide
+          for (let shape of slide.shapes.items) {
+            shape.load("id");
+          }
+          await context.sync();
+
+          // Find the shape by ID
+          let targetShape = null;
+          for (let shape of slide.shapes.items) {
+            if (shape.id === result.shapeId) {
+              targetShape = shape;
+              break;
+            }
+          }
+
+          if (!targetShape) {
+            console.log(`[ProcessWithAssistant] Shape ${result.shapeId} not found on slide ${slideIndex}`);
+            failedCount++;
+            continue;
+          }
+
+          const shape = targetShape;
 
           // Load textFrame
           shape.load("textFrame");
