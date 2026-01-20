@@ -363,6 +363,79 @@ async function extractTextFromSelectedShapes(context) {
   const textBlocks = [];
   for (let shape of selectedShapes.items) {
     try {
+      // First check if this is a group
+      shape.load("type");
+      await context.sync();
+
+      const shapeType = shape.type;
+      console.log(`[Extract] Checking selected shape (ID: ${shape.id}, Type: ${shapeType})`);
+
+      // Handle grouped shapes
+      if (shapeType === "Group" || shapeType === PowerPoint.ShapeType.group) {
+        console.log(`[Extract]   Shape ${shape.id} is a group - checking grouped shapes`);
+        try {
+          shape.load("groupItems");
+          await context.sync();
+
+          if (shape.groupItems) {
+            shape.groupItems.load("items");
+            await context.sync();
+
+            if (shape.groupItems.items && shape.groupItems.items.length > 0) {
+              console.log(`[Extract]   Group has ${shape.groupItems.items.length} items`);
+
+              for (let j = 0; j < shape.groupItems.items.length; j++) {
+                const groupedShape = shape.groupItems.items[j];
+                try {
+                  groupedShape.load("id, type");
+                  await context.sync();
+
+                  console.log(`[Extract]   Processing grouped shape ${j + 1}/${shape.groupItems.items.length} (ID: ${groupedShape.id}, Type: ${groupedShape.type})`);
+
+                  groupedShape.load("textFrame");
+                  await context.sync();
+
+                  if (groupedShape.textFrame) {
+                    groupedShape.textFrame.load("hasText");
+                    await context.sync();
+
+                    if (groupedShape.textFrame.hasText) {
+                      groupedShape.textFrame.load("textRange");
+                      await context.sync();
+
+                      if (groupedShape.textFrame.textRange) {
+                        groupedShape.textFrame.textRange.load("text");
+                        await context.sync();
+
+                        const text = groupedShape.textFrame.textRange.text?.trim();
+                        if (text) {
+                          console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+                          textBlocks.push({
+                            slideIndex,
+                            slideId,
+                            shapeId: groupedShape.id,
+                            originalText: text,
+                            isSelection: true,
+                            isGroupedShape: true,
+                            parentGroupId: shape.id
+                          });
+                        }
+                      }
+                    }
+                  }
+                } catch (groupError) {
+                  console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupError.message}`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`[Extract]   Error accessing group items: ${e.message}`);
+        }
+        continue; // Skip to next shape
+      }
+
+      // Not a group - extract text normally
       shape.load("textFrame");
       await context.sync();
 
@@ -437,55 +510,80 @@ async function extractTextFromSlideShapes(context, slideIndex) {
       if (shapeType === "Group" || shapeType === PowerPoint.ShapeType.group) {
         console.log(`[Extract]   Shape ${shapeId} is a group - checking grouped shapes`);
         try {
+          // First load groupItems property
           shape.load("groupItems");
           await context.sync();
 
-          if (shape.groupItems && shape.groupItems.items) {
-            console.log(`[Extract]   Group has ${shape.groupItems.items.length} items`);
+          console.log(`[Extract]   groupItems object:`, shape.groupItems);
+          console.log(`[Extract]   groupItems type:`, typeof shape.groupItems);
 
-            // Extract text from each shape in the group
-            for (let j = 0; j < shape.groupItems.items.length; j++) {
-              const groupedShape = shape.groupItems.items[j];
-              try {
-                groupedShape.load("id");
-                await context.sync();
+          if (shape.groupItems) {
+            // Load the items collection from groupItems
+            shape.groupItems.load("items");
+            await context.sync();
 
-                groupedShape.load("textFrame");
-                await context.sync();
+            console.log(`[Extract]   After loading items, groupItems.items:`, shape.groupItems.items);
 
-                if (groupedShape.textFrame) {
-                  groupedShape.textFrame.load("hasText");
+            if (shape.groupItems.items && shape.groupItems.items.length > 0) {
+              console.log(`[Extract]   Group has ${shape.groupItems.items.length} items`);
+
+              // Extract text from each shape in the group
+              for (let j = 0; j < shape.groupItems.items.length; j++) {
+                const groupedShape = shape.groupItems.items[j];
+                try {
+                  groupedShape.load("id, type");
                   await context.sync();
 
-                  if (groupedShape.textFrame.hasText) {
-                    groupedShape.textFrame.load("textRange");
+                  console.log(`[Extract]   Processing grouped shape ${j + 1}/${shape.groupItems.items.length} (ID: ${groupedShape.id}, Type: ${groupedShape.type})`);
+
+                  groupedShape.load("textFrame");
+                  await context.sync();
+
+                  if (groupedShape.textFrame) {
+                    groupedShape.textFrame.load("hasText");
                     await context.sync();
 
-                    if (groupedShape.textFrame.textRange) {
-                      groupedShape.textFrame.textRange.load("text");
+                    if (groupedShape.textFrame.hasText) {
+                      groupedShape.textFrame.load("textRange");
                       await context.sync();
 
-                      const text = groupedShape.textFrame.textRange.text?.trim();
-                      if (text) {
-                        console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                        textBlocks.push({
-                          slideIndex,
-                          slideId,
-                          shapeId: groupedShape.id,
-                          originalText: text,
-                          isSlideScope: true
-                        });
+                      if (groupedShape.textFrame.textRange) {
+                        groupedShape.textFrame.textRange.load("text");
+                        await context.sync();
+
+                        const text = groupedShape.textFrame.textRange.text?.trim();
+                        if (text) {
+                          console.log(`[Extract]   ✓ Grouped shape ${groupedShape.id} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+                          textBlocks.push({
+                            slideIndex,
+                            slideId,
+                            shapeId: groupedShape.id,
+                            originalText: text,
+                            isSlideScope: true,
+                            isGroupedShape: true,
+                            parentGroupId: shapeId
+                          });
+                        }
                       }
+                    } else {
+                      console.log(`[Extract]   Grouped shape ${groupedShape.id} hasText=false`);
                     }
+                  } else {
+                    console.log(`[Extract]   Grouped shape ${groupedShape.id} has no textFrame`);
                   }
+                } catch (groupError) {
+                  console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupError.message}`);
                 }
-              } catch (groupError) {
-                console.log(`[Extract]   Grouped shape ${j + 1} error: ${groupError.message}`);
               }
+            } else {
+              console.log(`[Extract]   groupItems.items is empty or undefined`);
             }
+          } else {
+            console.log(`[Extract]   shape.groupItems is null/undefined`);
           }
         } catch (e) {
           console.log(`[Extract]   Error accessing group items: ${e.message}`);
+          console.log(`[Extract]   Error stack:`, e.stack);
         }
         continue; // Skip to next shape
       }
@@ -582,20 +680,53 @@ async function updateShapes(context, updates) {
     await context.sync();
 
     for (let shape of selectedShapes.items) {
-      shape.load("id");
+      shape.load("id, type");
     }
     await context.sync();
 
     console.log(`[Update] Got ${selectedShapes.items.length} selected shapes`);
 
+    // Build a map of all shapes including those inside groups
+    const shapesMap = new Map();
+    for (let shape of selectedShapes.items) {
+      shapesMap.set(shape.id, shape);
+
+      // Check if this is a group and load its items
+      if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
+        console.log(`[Update] Shape ${shape.id} is a group - loading group items`);
+        try {
+          shape.load("groupItems");
+          await context.sync();
+
+          if (shape.groupItems) {
+            shape.groupItems.load("items");
+            await context.sync();
+
+            if (shape.groupItems.items && shape.groupItems.items.length > 0) {
+              for (let groupedShape of shape.groupItems.items) {
+                groupedShape.load("id");
+                await context.sync();
+                console.log(`[Update] Added grouped shape ${groupedShape.id} to map`);
+                shapesMap.set(groupedShape.id, groupedShape);
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`[Update] Error loading group items for shape ${shape.id}: ${e.message}`);
+        }
+      }
+    }
+
+    console.log(`[Update] Total shapes in map (including grouped): ${shapesMap.size}`);
+
     let updatedCount = 0;
     let failedCount = 0;
 
     for (let update of updates) {
-      const freshShape = selectedShapes.items.find(s => s.id === update.shapeId);
+      const freshShape = shapesMap.get(update.shapeId);
 
       if (!freshShape) {
-        console.log(`[Update] Shape ${update.shapeId} not in current selection`);
+        console.log(`[Update] Shape ${update.shapeId} not in current selection or groups`);
         failedCount++;
         continue;
       }
@@ -605,6 +736,7 @@ async function updateShapes(context, updates) {
         await context.sync();
 
         if (!freshShape.textFrame) {
+          console.log(`[Update] Shape ${update.shapeId} has no textFrame`);
           failedCount++;
           continue;
         }
@@ -613,6 +745,7 @@ async function updateShapes(context, updates) {
         await context.sync();
 
         if (!freshShape.textFrame.textRange) {
+          console.log(`[Update] Shape ${update.shapeId} has no textRange`);
           failedCount++;
           continue;
         }
@@ -664,15 +797,48 @@ async function updateShapes(context, updates) {
       slide.shapes.load("items");
       await context.sync();
 
-      // Load all shape IDs on this slide
+      // Load all shape IDs and types on this slide
       for (let shape of slide.shapes.items) {
-        shape.load("id");
+        shape.load("id, type");
       }
       await context.sync();
 
+      // Build a map of all shapes including those inside groups
+      const shapesMap = new Map();
+      for (let shape of slide.shapes.items) {
+        shapesMap.set(shape.id, shape);
+
+        // Check if this is a group and load its items
+        if (shape.type === "Group" || shape.type === PowerPoint.ShapeType.group) {
+          console.log(`[Update] Shape ${shape.id} on slide ${slideIndex + 1} is a group - loading group items`);
+          try {
+            shape.load("groupItems");
+            await context.sync();
+
+            if (shape.groupItems) {
+              shape.groupItems.load("items");
+              await context.sync();
+
+              if (shape.groupItems.items && shape.groupItems.items.length > 0) {
+                for (let groupedShape of shape.groupItems.items) {
+                  groupedShape.load("id");
+                  await context.sync();
+                  console.log(`[Update] Added grouped shape ${groupedShape.id} to map`);
+                  shapesMap.set(groupedShape.id, groupedShape);
+                }
+              }
+            }
+          } catch (e) {
+            console.log(`[Update] Error loading group items for shape ${shape.id}: ${e.message}`);
+          }
+        }
+      }
+
+      console.log(`[Update] Slide ${slideIndex + 1} has ${shapesMap.size} shapes (including grouped)`);
+
       // Update each shape
       for (let update of slideUpdates) {
-        const shape = slide.shapes.items.find(s => s.id === update.shapeId);
+        const shape = shapesMap.get(update.shapeId);
 
         if (!shape) {
           console.log(`[Update] Shape ${update.shapeId} not found on slide ${slideIndex + 1}`);
@@ -685,6 +851,7 @@ async function updateShapes(context, updates) {
           await context.sync();
 
           if (!shape.textFrame) {
+            console.log(`[Update] Shape ${update.shapeId} has no textFrame`);
             failedCount++;
             continue;
           }
@@ -693,6 +860,7 @@ async function updateShapes(context, updates) {
           await context.sync();
 
           if (!shape.textFrame.textRange) {
+            console.log(`[Update] Shape ${update.shapeId} has no textRange`);
             failedCount++;
             continue;
           }
