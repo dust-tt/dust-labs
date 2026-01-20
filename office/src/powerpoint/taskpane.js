@@ -430,27 +430,38 @@ async function extractTextFromSlideShapes(context, slideIndex) {
       await context.sync();
 
       const shapeId = shape.id;
+      console.log(`[Extract] Checking shape ${i + 1}/${slide.shapes.items.length} (ID: ${shapeId})`);
 
       shape.load("textFrame");
       await context.sync();
 
-      if (!shape.textFrame) continue;
+      if (!shape.textFrame) {
+        console.log(`[Extract]   Shape ${shapeId} has no textFrame - skipping`);
+        continue;
+      }
 
       shape.textFrame.load("hasText");
       await context.sync();
 
-      if (!shape.textFrame.hasText) continue;
+      if (!shape.textFrame.hasText) {
+        console.log(`[Extract]   Shape ${shapeId} hasText=false - skipping`);
+        continue;
+      }
 
       shape.textFrame.load("textRange");
       await context.sync();
 
-      if (!shape.textFrame.textRange) continue;
+      if (!shape.textFrame.textRange) {
+        console.log(`[Extract]   Shape ${shapeId} has no textRange - skipping`);
+        continue;
+      }
 
       shape.textFrame.textRange.load("text");
       await context.sync();
 
       const text = shape.textFrame.textRange.text?.trim();
       if (text) {
+        console.log(`[Extract]   ✓ Shape ${shapeId} extracted: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
         textBlocks.push({
           slideIndex,
           slideId,
@@ -458,9 +469,11 @@ async function extractTextFromSlideShapes(context, slideIndex) {
           originalText: text,
           isSlideScope: true
         });
+      } else {
+        console.log(`[Extract]   Shape ${shapeId} has empty text - skipping`);
       }
     } catch (e) {
-      // Shape doesn't support text - skip it
+      console.log(`[Extract]   Shape ${i + 1} threw error: ${e.message} - skipping`);
     }
   }
 
