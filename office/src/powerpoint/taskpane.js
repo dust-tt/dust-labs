@@ -950,7 +950,7 @@ async function processWithAssistant(assistantId, instructions, scope) {
         }
         targetSlide.load("id");
         await context.sync();
-        const targetSlideId = targetSlide.id;
+        let targetSlideId = targetSlide.id;
         console.log(`[ProcessWithAssistant] Using slide ${targetSlideIndex + 1} (ID: ${targetSlideId}) for selected shapes`);
 
         // Load selected shape IDs and verify them
