@@ -75,19 +75,196 @@ function getSourceUrlFromReference(reference) {
   window.useAnswer = useAnswer;
 
   let defaultAssistantIds;
+  let isAuthenticated = false;
 
   // Helper function to get Dust base URL based on region
-  function getDustBaseUrl(metadata) {
-    const region = metadata.settings.region;
+  function getDustBaseUrl() {
+    // Get region from OAuth token
+    const region = DustZendeskAuth.getAuthStorage("region");
 
-    if (region && region.toLowerCase() === "eu") {
+    // Use EU endpoint only if region is exactly "europe-west1"
+    if (region === "europe-west1") {
+      console.log(`[Zendesk App] Using EU region: ${region} -> https://eu.dust.tt`);
       return "https://eu.dust.tt";
     }
+    console.log(`[Zendesk App] Using US region: ${region || 'default'} -> https://dust.tt`);
     return "https://dust.tt";
   }
 
-  try {
-    await client.on("app.registered");
+  // Check if user is authenticated via OAuth
+  function checkAuthentication() {
+    const accessToken = DustZendeskAuth.getAuthStorage("accessToken");
+    const workspaceId = DustZendeskAuth.getAuthStorage("workspaceId");
+    return !!(accessToken && workspaceId);
+  }
+
+  // Show authentication UI
+  function showAuthUI() {
+    document.getElementById("authContainer").classList.add("show");
+    document.getElementById("mainContent").classList.add("hidden");
+
+    // Hide logout link when not authenticated
+    const logoutLink = document.getElementById("logoutLink");
+    if (logoutLink) {
+      logoutLink.style.display = "none";
+    }
+  }
+
+  // Hide authentication UI and show main content
+  function hideAuthUI() {
+    document.getElementById("authContainer").classList.remove("show");
+    document.getElementById("mainContent").classList.remove("hidden");
+
+    // Always show logout link when authenticated
+    const logoutLink = document.getElementById("logoutLink");
+    if (logoutLink) {
+      logoutLink.style.display = "block";
+    }
+  }
+
+  // Handle OAuth success
+  async function handleOAuthSuccess(data) {
+    const { access_token, user, refresh_token } = data;
+
+    if (!access_token) {
+      throw new Error('No access token received');
+    }
+
+    // Store credentials
+    DustZendeskAuth.setAuthStorage("accessToken", access_token);
+    DustZendeskAuth.setAuthStorage("refreshToken", refresh_token);
+
+    const { workspaceId, region } = DustZendeskAuth.decodeToken(access_token);
+
+    DustZendeskAuth.setAuthStorage("workspaceId", workspaceId);
+    DustZendeskAuth.setAuthStorage("region", region);
+    if (user) {
+      DustZendeskAuth.setAuthStorage("user", JSON.stringify(user));
+    }
+
+    // Hide authentication UI
+    const authLoading = document.getElementById("authLoading");
+    const authError = document.getElementById("authError");
+    const loginButton = document.getElementById("loginButton");
+
+    if (authLoading) authLoading.style.display = "none";
+    if (authError) authError.style.display = "none";
+    if (loginButton) loginButton.style.display = "block";
+
+    isAuthenticated = true;
+    hideAuthUI();
+
+    // Load assistants and initialize
+    try {
+      await initializeApp();
+    } catch (error) {
+      console.error('Failed to initialize app after OAuth:', error);
+      showAuthError(error.message);
+    }
+  }
+
+  // Handle OAuth error
+  function handleOAuthError(error) {
+    console.error('OAuth error:', error);
+    showAuthError(error.message || 'Authentication failed');
+  }
+
+  // Show authentication error
+  function showAuthError(message) {
+    const authError = document.getElementById("authError");
+    const authLoading = document.getElementById("authLoading");
+    const loginButton = document.getElementById("loginButton");
+
+    if (authError) {
+      authError.textContent = message;
+      authError.style.display = "block";
+    }
+    if (authLoading) authLoading.style.display = "none";
+    if (loginButton) loginButton.style.display = "block";
+  }
+
+  // Handle logout
+  function handleLogout() {
+    DustZendeskAuth.clearAuth();
+    isAuthenticated = false;
+
+    // Clear assistant select
+    const selectElement = document.getElementById("assistantSelect");
+    if (selectElement) {
+      selectElement.innerHTML = '<option value="">Select an assistant</option>';
+      selectElement.disabled = true;
+    }
+
+    // Clear dust response
+    const dustResponse = document.getElementById("dustResponse");
+    if (dustResponse) {
+      dustResponse.innerHTML = "";
+    }
+
+    showAuthUI();
+  }
+
+  // Set up OAuth login button
+  const loginButton = document.getElementById("loginButton");
+  if (loginButton) {
+    loginButton.onclick = () => {
+      DustZendeskAuth.initiateOAuth({
+        errorElement: document.getElementById("authError"),
+        loadingElement: document.getElementById("authLoading"),
+        connectButton: loginButton,
+        onAuthSuccess: handleOAuthSuccess,
+        onAuthError: handleOAuthError,
+      });
+    };
+  }
+
+  // Set up logout link
+  const logoutLink = document.getElementById("logoutLink");
+  if (logoutLink) {
+    logoutLink.onclick = (e) => {
+      e.preventDefault();
+      handleLogout();
+    };
+  }
+
+  // Listen for postMessage from OAuth callback
+  window.addEventListener('message', function (event) {
+    if (event.origin !== window.location.origin) {
+      return;
+    }
+
+    try {
+      const result = JSON.parse(event.data);
+
+      // Handle code exchange (callback sends code back to main app)
+      if (result.success && result.action === 'exchange_token' && result.code) {
+        console.log('[Zendesk App] Received OAuth code via postMessage, exchanging for token...');
+        void DustZendeskAuth.exchangeCodeForToken(result.code, {
+          errorElement: document.getElementById("authError"),
+          loadingElement: document.getElementById("authLoading"),
+          connectButton: document.getElementById("loginButton"),
+          onAuthSuccess: handleOAuthSuccess,
+          onAuthError: handleOAuthError,
+          requestFunction: client.request.bind(client), // Use Zendesk proxy to avoid CORS
+        });
+      }
+      // Handle direct access token (fallback)
+      else if (result.success && result.access_token) {
+        console.log('[Zendesk App] Received OAuth access token via postMessage');
+        void handleOAuthSuccess(result);
+      }
+      // Handle errors
+      else if (!result.success && result.error) {
+        console.error('[Zendesk App] OAuth error via postMessage:', result.error);
+        handleOAuthError(new Error(result.error));
+      }
+    } catch (e) {
+      console.warn('[Zendesk App] Failed to parse postMessage:', e);
+    }
+  });
+
+  // Initialize app after authentication
+  async function initializeApp() {
     const metadata = await client.metadata();
     defaultAssistantIds = metadata.settings.default_assistant_ids;
 
@@ -111,11 +288,32 @@ function getSourceUrlFromReference(reference) {
     }
 
     hideLoadingSpinner();
+  }
+
+  try {
+    await client.on("app.registered");
+
+    // Check if user is authenticated
+    isAuthenticated = checkAuthentication();
+
+    if (isAuthenticated) {
+      hideAuthUI(); // This will show the logout link
+      await initializeApp();
+    } else {
+      showAuthUI(); // This will hide the logout link
+      hideLoadingSpinner();
+    }
   } catch (error) {
     hideLoadingSpinner();
-    showErrorMessage(
-      error.message || "Failed to load assistants. Please try again later."
-    );
+    if (isAuthenticated) {
+      showErrorMessage(
+        error.message || "Failed to load assistants. Please try again later."
+      );
+    } else {
+      showAuthError(
+        error.message || "Failed to initialize. Please try again."
+      );
+    }
   }
 
   await client.invoke("resize", { width: "100%", height: "400px" });
@@ -148,60 +346,29 @@ function getSourceUrlFromReference(reference) {
     }
   }
 
-  async function checkUserValidity(dustWorkspaceId, dustApiKey, userEmail) {
-    const metadata = await client.metadata();
-    const baseUrl = getDustBaseUrl(metadata);
+  async function loadAssistants(allowedAssistantIds = null) {
+    // Get OAuth credentials
+    let accessToken = DustZendeskAuth.getAuthStorage("accessToken");
+    const workspaceId = DustZendeskAuth.getAuthStorage("workspaceId");
 
-    const validationUrl = `${baseUrl}/api/v1/w/${dustWorkspaceId}/members/validate`;
-    const options = {
-      url: validationUrl,
-      type: "POST",
-      headers: {
-        Authorization: `Bearer ${dustApiKey}`,
-      },
-      secure: isProd,
-      data: { email: userEmail },
-    };
+    if (!accessToken || !workspaceId) {
+      throw new Error("Not authenticated. Please login to continue.");
+    }
 
+    // Try to refresh token if needed
     try {
-      const response = await client.request(options);
-      if (response && response.valid) {
-        return true;
-      } else {
-        return false;
+      const refreshedToken = await DustZendeskAuth.tryRefreshAccessToken(client.request.bind(client));
+      if (refreshedToken) {
+        accessToken = refreshedToken;
       }
     } catch (error) {
-      console.error("Error validating user:", error);
-      return false;
-    }
-  }
-
-  async function loadAssistants(allowedAssistantIds = null) {
-    const metadata = await client.metadata();
-    const dustApiKey = isProd
-      ? "{{setting.dust_api_key}}"
-      : `${metadata.settings.dust_api_key}`;
-    const dustWorkspaceId = isProd
-      ? "{{setting.dust_workspace_id}}"
-      : `${metadata.settings.dust_workspace_id}`;
-
-    const userData = await client.get("currentUser");
-    const userEmail = userData.currentUser.email;
-
-    const isValid = await checkUserValidity(
-      dustWorkspaceId,
-      dustApiKey,
-      userEmail
-    );
-    if (!isValid) {
-      throw new Error(
-        "You need a Dust.tt account to use this app. Please contact your administrator to enable access to Dust"
-      );
+      console.warn("Failed to refresh token:", error);
     }
 
-    const authorization = `Bearer ${dustApiKey}`;
-    const baseUrl = getDustBaseUrl(metadata);
-    const assistantsApiUrl = `${baseUrl}/api/v1/w/${dustWorkspaceId}/assistant/agent_configurations`;
+    // User is already validated through OAuth, no need to check again
+    const authorization = `Bearer ${accessToken}`;
+    const baseUrl = getDustBaseUrl();
+    const assistantsApiUrl = `${baseUrl}/api/v1/w/${workspaceId}/assistant/agent_configurations`;
 
     const options = {
       url: assistantsApiUrl,
@@ -341,7 +508,7 @@ function getSourceUrlFromReference(reference) {
     }
   }
 
-  async function pollConversationEvents(conversationId, uniqueId, dustWorkspaceId, authorization, baseUrl, metadata) {
+  async function pollConversationEvents(conversationId, uniqueId, dustWorkspaceId, authorization, baseUrl) {
     const maxPollingTime = 3 * 60 * 1000; // 3 minutes in milliseconds
     const pollInterval = 1000; // 1 second for faster updates
     const startTime = Date.now();
@@ -623,18 +790,30 @@ function getSourceUrlFromReference(reference) {
     let uniqueId;
 
     try {
+      // Get OAuth credentials
+      let accessToken = DustZendeskAuth.getAuthStorage("accessToken");
+      const workspaceId = DustZendeskAuth.getAuthStorage("workspaceId");
+
+      if (!accessToken || !workspaceId) {
+        throw new Error("Not authenticated. Please login to continue.");
+      }
+
+      // Try to refresh token if needed
+      try {
+        const refreshedToken = await DustZendeskAuth.tryRefreshAccessToken(client.request.bind(client));
+        if (refreshedToken) {
+          accessToken = refreshedToken;
+        }
+      } catch (error) {
+        console.warn("Failed to refresh token:", error);
+      }
+
       const metadata = await client.metadata();
-      const dustApiKey = isProd
-        ? "{{setting.dust_api_key}}"
-        : `${metadata.settings.dust_api_key}`;
-      const dustWorkspaceId = isProd
-        ? "{{setting.dust_workspace_id}}"
-        : `${metadata.settings.dust_workspace_id}`;
       const hideCustomerInformation =
         metadata.settings.hide_customer_information;
-      const baseUrl = getDustBaseUrl(metadata);
-      const dustApiUrl = `${baseUrl}/api/v1/w/${dustWorkspaceId}/assistant/conversations`;
-      const authorization = `Bearer ${dustApiKey}`;
+      const baseUrl = getDustBaseUrl();
+      const dustApiUrl = `${baseUrl}/api/v1/w/${workspaceId}/assistant/conversations`;
+      const authorization = `Bearer ${accessToken}`;
 
       let selectedAssistantId, selectedAssistantName;
       const selectElement = document.getElementById("assistantSelect");
@@ -656,8 +835,13 @@ function getSourceUrlFromReference(reference) {
 
       const userInputValue = userInput.value;
 
-      const userData = await client.get("currentUser");
-      const userFullName = userData.currentUser.name;
+      // Get the logged-in Dust user from OAuth
+      const dustUserData = DustZendeskAuth.getAuthStorage("user");
+      const dustUser = dustUserData ? JSON.parse(dustUserData) : null;
+
+      // Use Dust user's identity for the conversation context
+      const userFullName = dustUser?.name || "Zendesk User";
+      const userEmail = dustUser?.email || "unknown@zendesk.com";
 
       const data = await client.get("ticket");
 
@@ -801,8 +985,8 @@ function getSourceUrlFromReference(reference) {
             username: userFullName.replace(/\s/g, ""),
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             fullName: userFullName,
-            email: userData.currentUser.email,
-            profilePictureUrl: "",
+            email: userEmail,
+            profilePictureUrl: dustUser?.imageUrl || "",
             origin: "zendesk",
           },
         },
@@ -829,10 +1013,9 @@ function getSourceUrlFromReference(reference) {
       await pollConversationEvents(
         response.conversation.sId,
         uniqueId,
-        dustWorkspaceId,
+        workspaceId,
         authorization,
-        baseUrl,
-        metadata
+        baseUrl
       );
 
       dustResponse.scrollTop = dustResponse.scrollHeight;
