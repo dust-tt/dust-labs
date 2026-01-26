@@ -83,6 +83,56 @@ async function callDustAPI(path, options = {}) {
     }
 }
 
+// Helper function to upload a file to Dust
+async function uploadFileToDust(fileContent, fileName, contentType, workspaceId) {
+    try {
+        // Step 1: Request upload URL
+        const fileSize = new Blob([fileContent]).size;
+        const uploadRequestPath = `/api/v1/w/${workspaceId}/files`;
+
+        const uploadRequestResult = await callDustAPI(uploadRequestPath, {
+            method: 'POST',
+            body: {
+                contentType: contentType,
+                fileName: fileName,
+                fileSize: fileSize,
+                useCase: 'conversation',
+            },
+        });
+
+        const fileInfo = uploadRequestResult.file;
+
+        // Step 2: Upload the actual file
+        const formData = new FormData();
+        const blob = new Blob([fileContent], { type: contentType });
+        formData.append('file', blob, fileName);
+
+        const token = getDustStorageValue('dustToken');
+        const uploadResponse = await fetch(fileInfo.uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json().catch(() => ({}));
+            throw new Error(
+                errorData?.error?.message ||
+                `Failed to upload file: ${uploadResponse.status}`
+            );
+        }
+
+        const uploadResult = await uploadResponse.json();
+        return uploadResult.file;
+    } catch (error) {
+        console.error('File upload failed:', error);
+        throw error;
+    }
+}
+
 // Export for use in taskpane.js
 window.callDustAPI = callDustAPI;
+window.uploadFileToDust = uploadFileToDust;
 window.getOfficeApp = getOfficeApp;
