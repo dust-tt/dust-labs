@@ -1,0 +1,77 @@
+{
+  "documentationUrl": "https://docs.dust.tt/reference/developer-platform-overview",
+  "connectionSpecification": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Dust Destination Spec",
+    "type": "object",
+    "required": [
+      "api_key",
+      "workspace_id",
+      "space_id",
+      "data_source_id"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "api_key": {
+        "type": "string",
+        "title": "API Key",
+        "description": "Dust API key (Bearer token). Found in your Dust workspace developer settings.",
+        "airbyte_secret": true,
+        "order": 0
+      },
+      "workspace_id": {
+        "type": "string",
+        "title": "Workspace ID",
+        "description": "The Dust workspace ID (wId in the API URL).",
+        "order": 1
+      },
+      "space_id": {
+        "type": "string",
+        "title": "Space ID",
+        "description": "The Dust space ID where the data source lives.",
+        "order": 2
+      },
+      "data_source_id": {
+        "type": "string",
+        "title": "Data Source ID",
+        "description": "The ID of the Dust data source to write documents into.",
+        "order": 3
+      },
+      "base_url": {
+        "type": "string",
+        "title": "Base URL",
+        "description": "Dust API base URL. Use https://dust.tt for US or https://eu.dust.tt for Europe.",
+        "default": "https://dust.tt",
+        "order": 4
+      },
+      "data_format": {
+        "type": "string",
+        "title": "Data Format",
+        "description": "Format to write data: 'documents' stores each record as a document (good for unstructured data), 'tables' stores records as rows in tables (good for structured data).",
+        "enum": ["documents", "tables"],
+        "default": "documents",
+        "order": 5
+      },
+      "table_id_prefix": {
+        "type": "string",
+        "title": "Table ID Prefix",
+        "description": "Prefix for table names when using 'tables' format. Table names will be '{prefix}{stream_name}'. Only used when data_format is 'tables'.",
+        "default": "airbyte_",
+        "order": 6
+      },
+      "table_batch_size": {
+        "type": "integer",
+        "title": "Table Batch Size",
+        "description": "Number of rows to buffer before flushing to Dust when using 'tables' format. Larger values use more memory but fewer API calls. Only used when data_format is 'tables'.",
+        "default": 500,
+        "minimum": 1,
+        "order": 7
+      }
+    }
+  },
+  "supportsIncremental": true,
+  "supported_destination_sync_modes": [
+    "overwrite",
+    "append"
+  ]
+}

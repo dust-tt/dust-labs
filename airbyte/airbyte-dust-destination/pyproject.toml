@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "airbyte-destination-dust"
+version = "0.1.0"
+description = "Airbyte destination connector for Dust data sources"
+authors = ["Dust <dev@dust.tt>"]
+license = "MIT"
+packages = [{include = "destination_dust"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+airbyte-cdk = ">=6.0"
+requests = "^2.31"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-mock = "^3.12"
+requests-mock = "^1.11"
+ruff = "^0.3"
+mypy = "^1.9"
+
+[tool.poetry.scripts]
+destination-dust = "main:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
