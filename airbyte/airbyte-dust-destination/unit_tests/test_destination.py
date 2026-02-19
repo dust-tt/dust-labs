@@ -7,7 +7,10 @@ from typing import Any, Dict
 from unittest import mock
 from unittest.mock import Mock
 
-from destination_dust.destination import DestinationDust
+from destination_dust.destination import (
+    DestinationDust,
+    MAX_TABLE_PAYLOAD_BYTES,
+)
 
 from airbyte_cdk.models import AirbyteConnectionStatus, AirbyteMessage, Status, Type
 from airbyte_cdk.models.airbyte_protocol import (
@@ -288,3 +291,119 @@ def test_flatten_record_flattens_nested_objects():
     result = DestinationDust._flatten_record(data)
     assert result["id"] == 1
     assert result["meta"] == '{"key": "value"}'
+
+
+# --- Payload size cap (tables): _table_payload_bytes, _chunk_rows_by_payload_size ---
+
+
+def test_table_payload_bytes_empty():
+    assert DestinationDust._table_payload_bytes([]) == len(
+        json.dumps({"rows": []}).encode("utf-8")
+    )
+
+
+def test_table_payload_bytes_single_row():
+    rows = [{"id": 1, "name": "Alice"}]
+    size = DestinationDust._table_payload_bytes(rows)
+    expected_payload = {
+        "rows": [{"row_id": "1", "value": {"id": 1, "name": "Alice"}}]
+    }
+    assert size == len(json.dumps(expected_payload).encode("utf-8"))
+
+
+def test_chunk_rows_by_payload_size_empty():
+    assert DestinationDust._chunk_rows_by_payload_size([], 1000) == []
+
+
+def test_chunk_rows_by_payload_size_under_cap():
+    rows = [{"id": i, "name": "x"} for i in range(5)]
+    chunks = DestinationDust._chunk_rows_by_payload_size(
+        rows, MAX_TABLE_PAYLOAD_BYTES
+    )
+    assert len(chunks) == 1
+    assert chunks[0] == rows
+
+
+def test_chunk_rows_by_payload_size_exceeds_cap():
+    # Each row is ~50+ bytes; cap at 100 so we get multiple chunks
+    rows = [{"id": i, "name": "Alice"} for i in range(10)]
+    chunks = DestinationDust._chunk_rows_by_payload_size(rows, 100)
+    assert len(chunks) >= 2
+    assert sum(len(c) for c in chunks) == 10
+    for chunk in chunks:
+        assert DestinationDust._table_payload_bytes(chunk) <= 100 or len(chunk) == 1
+
+
+def test_chunk_rows_by_payload_size_single_row_over_cap():
+    # One row that alone exceeds cap is still emitted as one chunk (don't drop)
+    big_row = {"id": 1, "data": "x" * (MAX_TABLE_PAYLOAD_BYTES + 1)}
+    chunks = DestinationDust._chunk_rows_by_payload_size(
+        [big_row], MAX_TABLE_PAYLOAD_BYTES
+    )
+    assert len(chunks) == 1
+    assert chunks[0] == [big_row]
+
+
+@mock.patch("destination_dust.destination.DustClient")
+def test_write_tables_mode_small_batch_single_upsert(client_init):
+    """Normal small batch still results in one upsert_rows call per batch."""
+    stream = "people"
+    mock_client = _init_mocks(client_init)
+    mock_client.find_table_by_title.return_value = None
+    mock_client.upsert_table.return_value = {"table_id": "t1"}
+    tables_config = {
+        **config,
+        "data_format": "tables",
+        "table_batch_size": 2,
+    }
+    # 2 records -> one batch of 2, under 1MB -> one upsert_rows call
+    input_messages = [
+        _record(stream=stream, data={"id": 1, "name": "A"}),
+        _record(stream=stream, data={"id": 2, "name": "B"}),
+        _state(),
+    ]
+    destination = DestinationDust()
+    list(
+        destination.write(
+            config=tables_config,
+            configured_catalog=_configured_catalog(stream_name=stream),
+            input_messages=input_messages,
+        )
+    )
+    assert mock_client.upsert_rows.call_count == 1
+    call_rows = mock_client.upsert_rows.call_args[0][1]
+    assert len(call_rows) == 2
+
+
+@mock.patch("destination_dust.destination.DustClient")
+def test_write_tables_mode_large_payload_split_into_chunks(client_init):
+    """When a batch would exceed 1MB, upsert_rows is called multiple times with smaller chunks."""
+    stream = "people"
+    mock_client = _init_mocks(client_init)
+    mock_client.find_table_by_title.return_value = None
+    mock_client.upsert_table.return_value = {"table_id": "t1"}
+    # Small batch_size so we flush one batch of 3 rows; each row is huge so payload > 1MB
+    tables_config = {
+        **config,
+        "data_format": "tables",
+        "table_batch_size": 3,
+    }
+    big = "x" * (400 * 1024)  # ~400KB per row -> 3 rows ~1.2MB
+    input_messages = [
+        _record(stream=stream, data={"id": i, "name": big}) for i in range(3)
+    ]
+    input_messages.append(_state())
+    destination = DestinationDust()
+    list(
+        destination.write(
+            config=tables_config,
+            configured_catalog=_configured_catalog(stream_name=stream),
+            input_messages=input_messages,
+        )
+    )
+    # Should be split into multiple upsert_rows calls (each chunk < 1MB)
+    assert mock_client.upsert_rows.call_count >= 2
+    total_rows_sent = sum(
+        len(call[0][1]) for call in mock_client.upsert_rows.call_args_list
+    )
+    assert total_rows_sent == 3

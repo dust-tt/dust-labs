@@ -1,16 +1,23 @@
 import hashlib
+import io
 import json
 import logging
 import re
 import uuid
 from collections import defaultdict
-from typing import Any, Iterable, List, Mapping, Optional
+from dataclasses import dataclass
+from typing import Any, Iterable, List, Mapping, Optional, cast
+
+import orjson
+from serpyco_rs import Serializer
 
 from airbyte_cdk.destinations import Destination
+from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteLogMessage,
     AirbyteMessage,
+    AirbyteMessageSerializer,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
@@ -18,6 +25,7 @@ from airbyte_cdk.models import (
     Status,
     Type,
 )
+from airbyte_cdk.models.airbyte_protocol_serializers import custom_type_resolver
 
 from destination_dust.client import DustClient
 
@@ -25,6 +33,79 @@ logger = logging.getLogger("airbyte")
 
 # Default batch size for table row upserts (configurable via table_batch_size)
 DEFAULT_TABLE_BATCH_SIZE = 500
+
+# Max payload size for table row upserts (Dust API); cap at < 1MB before flushing
+MAX_TABLE_PAYLOAD_BYTES = 1024 * 1024 - 1
+
+
+@dataclass
+class PatchedAirbyteStateMessage(AirbyteStateMessage):
+    """Declare the `id` attribute that platform sends (32-bit integer)."""
+
+    id: int | None = None
+    """Injected by the platform as a 32-bit integer."""
+
+
+@dataclass
+class PatchedAirbyteMessage(AirbyteMessage):
+    """Keep all defaults but override the type used in `state`."""
+
+    state: PatchedAirbyteStateMessage | None = None
+    """Override class for the state message only."""
+
+
+PatchedAirbyteMessageSerializer = Serializer(
+    PatchedAirbyteMessage,
+    omit_none=True,
+    custom_type_resolver=custom_type_resolver,
+)
+"""Redeclared SerDes class using the patched dataclass to preserve state.id."""
+
+
+def _to_patched_message(message: AirbyteMessage) -> PatchedAirbyteMessage:
+    """Convert AirbyteMessage to PatchedAirbyteMessage, preserving state.id if present."""
+    # If already a PatchedAirbyteMessage, return as-is
+    if isinstance(message, PatchedAirbyteMessage):
+        return message
+    
+    if message.type == Type.STATE and message.state:
+        # Preserve id if message.state is already a PatchedAirbyteStateMessage
+        state_id = None
+        if isinstance(message.state, PatchedAirbyteStateMessage):
+            state_id = message.state.id
+        
+        # Convert state to PatchedAirbyteStateMessage
+        patched_state = PatchedAirbyteStateMessage(
+            type=getattr(message.state, "type", None),
+            stream=getattr(message.state, "stream", None),
+            global_=getattr(message.state, "global_", None),
+            data=getattr(message.state, "data", None),
+            sourceStats=getattr(message.state, "sourceStats", None),
+            destinationStats=getattr(message.state, "destinationStats", None),
+            id=state_id,  # Preserve id from incoming messages
+        )
+        return PatchedAirbyteMessage(
+            type=message.type,
+            log=message.log,
+            spec=message.spec,
+            connectionStatus=message.connectionStatus,
+            catalog=message.catalog,
+            record=message.record,
+            state=patched_state,
+            trace=message.trace,
+            control=message.control,
+        )
+    return PatchedAirbyteMessage(
+        type=message.type,
+        log=message.log,
+        spec=message.spec,
+        connectionStatus=message.connectionStatus,
+        catalog=message.catalog,
+        record=message.record,
+        state=None,
+        trace=message.trace,
+        control=message.control,
+    )
 
 
 def _create_log_message(level: Level, message: str) -> AirbyteMessage:
@@ -37,52 +118,41 @@ def _create_log_message(level: Level, message: str) -> AirbyteMessage:
 
 def _ensure_state_has_id(message: AirbyteMessage) -> AirbyteMessage:
     """
-    Ensure state message has an id field. If missing, add one.
-    
-    Airbyte requires state messages to have an id field for proper state tracking.
-    The id should be on the AirbyteStateMessage object.
+    Pass-through for state messages (id is preserved via PatchedAirbyteMessage).
     """
-    if message.type != Type.STATE:
-        return message
-    
-    # Check if state message already has an id
-    if message.state:
-        # Try to get id from state message
-        state_id = getattr(message.state, 'id', None)
-        if state_id:
-            return message
-        
-        # Get state data
-        state_data = getattr(message.state, 'data', {}) or {}
-    else:
-        state_data = {}
-    
-    # Generate an id from state data hash if no id exists
-    state_id = hashlib.sha256(json.dumps(state_data, sort_keys=True, default=str).encode()).hexdigest()[:16]
-    
-    # Create new state message with id
-    # Try to preserve other attributes if they exist
-    try:
-        new_state = AirbyteStateMessage(
-            data=state_data,
-            id=state_id
-        )
-    except TypeError:
-        # If AirbyteStateMessage doesn't accept id parameter directly, 
-        # try creating it and setting id as attribute
-        new_state = AirbyteStateMessage(data=state_data)
-        if hasattr(new_state, 'id'):
-            new_state.id = state_id
-    
-    return AirbyteMessage(
-        type=Type.STATE,
-        state=new_state
-    )
+    return message
 
 
 class DestinationDust(Destination):
     def spec(self, *args: Any, **kwargs: Any) -> ConnectorSpecification:
         return super().spec(*args, **kwargs)
+
+    def run(self, args: List[str]) -> None:
+        """Override to use PatchedAirbyteMessageSerializer which preserves state.id."""
+        init_uncaught_exception_handler(logger)
+        parsed_args = self.parse_args(args)
+        output_messages = self.run_cmd(parsed_args)
+        for message in output_messages:
+            # Convert to PatchedAirbyteMessage for serialization
+            patched = _to_patched_message(message)
+            print(
+                orjson.dumps(
+                    PatchedAirbyteMessageSerializer.dump(patched)
+                ).decode()
+            )
+
+    def _parse_input_stream(self, input_stream: io.TextIOWrapper) -> Iterable[AirbyteMessage]:
+        """Reads from stdin, converting to Airbyte messages.
+        
+        Uses PatchedAirbyteMessageSerializer to preserve the platform-injected state.id.
+        """
+        for line in input_stream:
+            try:
+                yield PatchedAirbyteMessageSerializer.load(orjson.loads(line))
+            except orjson.JSONDecodeError:
+                logger.info(
+                    f"ignoring input which can't be deserialized as Airbyte Message: {line}"
+                )
 
     def check(
         self, logger: logging.Logger, config: Mapping[str, Any]
@@ -232,7 +302,10 @@ class DestinationDust(Destination):
                         )
 
                     rows_batch = stream_rows[stream_name][:batch_size]
-                    client.upsert_rows(table_ids[stream_name], rows_batch)
+                    for chunk in self._chunk_rows_by_payload_size(
+                        rows_batch, MAX_TABLE_PAYLOAD_BYTES
+                    ):
+                        client.upsert_rows(table_ids[stream_name], chunk)
                     stream_rows[stream_name] = stream_rows[stream_name][batch_size:]
 
         # Flush remaining rows
@@ -262,10 +335,13 @@ class DestinationDust(Destination):
                     client, stream_name, streams.get(stream_name)
                 )
 
-            # Flush in batches
+            # Flush in batches (by row count), then by payload size so each request is < 1MB
             for i in range(0, len(rows), batch_size):
                 batch = rows[i:i + batch_size]
-                client.upsert_rows(table_ids[stream_name], batch)
+                for chunk in self._chunk_rows_by_payload_size(
+                    batch, MAX_TABLE_PAYLOAD_BYTES
+                ):
+                    client.upsert_rows(table_ids[stream_name], chunk)
 
     def _ensure_table_exists(
         self,
@@ -389,3 +465,55 @@ class DestinationDust(Destination):
             else:
                 flattened[key] = value
         return flattened
+
+    @staticmethod
+    def _format_row_for_payload_size(row: dict[str, Any]) -> dict[str, Any]:
+        """
+        Format a row like the client does for upsert_rows payload sizing.
+        Mirrors client row_id logic so payload byte size matches the actual request.
+        """
+        row_id = str(row.get("id", ""))
+        if not row_id:
+            for key, value in row.items():
+                if value is not None and str(value).strip():
+                    row_id = str(value)
+                    break
+            if not row_id:
+                row_id = str(hash(str(row)))[:16]
+        return {"row_id": row_id, "value": row}
+
+    @staticmethod
+    def _table_payload_bytes(rows: List[dict[str, Any]]) -> int:
+        """Return the byte size of the JSON payload as sent by the client for these rows."""
+        if not rows:
+            return len(json.dumps({"rows": []}, default=str).encode("utf-8"))
+        payload = {
+            "rows": [
+                DestinationDust._format_row_for_payload_size(r) for r in rows
+            ]
+        }
+        return len(json.dumps(payload, default=str).encode("utf-8"))
+
+    @staticmethod
+    def _chunk_rows_by_payload_size(
+        rows: List[dict[str, Any]], max_bytes: int
+    ) -> List[List[dict[str, Any]]]:
+        """
+        Split rows into chunks such that each chunk's payload size is <= max_bytes.
+        If a single row exceeds max_bytes, it is still emitted as its own chunk.
+        """
+        if not rows:
+            return []
+        chunks: List[List[dict[str, Any]]] = []
+        current: List[dict[str, Any]] = []
+        for row in rows:
+            candidate = current + [row]
+            size = DestinationDust._table_payload_bytes(candidate)
+            if current and size > max_bytes:
+                chunks.append(current)
+                current = [row]
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        return chunks

@@ -1,6 +1,6 @@
 # Airbyte Destination Connector for Dust
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An [Airbyte](https://airbyte.com/) destination connector that syncs data to [Dust](https://dust.tt/) data sources. Supports both **document-based** and **table-based** data formats, allowing you to choose the best storage model for your use case.
@@ -18,7 +18,7 @@ An [Airbyte](https://airbyte.com/) destination connector that syncs data to [Dus
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.13
 - An Airbyte instance (OSS or Cloud)
 - A Dust workspace with API access
 
