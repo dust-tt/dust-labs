@@ -7,14 +7,14 @@
     xsi:type="TaskPaneApp">
     
     <!-- Basic Information -->
-    <Id>09a70b41-66f6-421b-b8a4-e825f43be408</Id>
+    <Id>e7a1a8c3-9b2f-4d3e-8f6a-1c2d3e4f5a6b</Id>
     <Version>1.0.0.0</Version>
     <ProviderName>Dust</ProviderName>
     <DefaultLocale>en-US</DefaultLocale>
     
     <!-- Display Name and Description -->
-    <DisplayName DefaultValue="Dust Staging Excel Add-in"/>
-    <Description DefaultValue="Use AI Agents in your Excel spreadsheet (Staging)"/>
+    <DisplayName DefaultValue="Dust Excel Add-in"/>
+    <Description DefaultValue="Use AI Agents in your Excel spreadsheet"/>
     <IconUrl DefaultValue="https://dust.tt/static/favicon.png"/>
     <HighResolutionIconUrl DefaultValue="https://dust.tt/static/favicon@3x.png"/>
     <SupportUrl DefaultValue="https://dust.tt/support"/>
@@ -24,7 +24,6 @@
         <AppDomain>https://dust.tt</AppDomain>
         <AppDomain>https://eu.dust.tt</AppDomain>
         <AppDomain>https://office-addins.dust.tt</AppDomain>
-        <AppDomain>https://dust-labs-5z4y.vercel.app</AppDomain>
     </AppDomains>
     
     <!-- Host and Permissions -->
@@ -33,7 +32,7 @@
     </Hosts>
     
     <DefaultSettings>
-        <SourceLocation DefaultValue="https://dust-labs-5z4y.vercel.app/excel/taskpane.html"/>
+        <SourceLocation DefaultValue="https://office-addins.dust.tt/excel/taskpane.html"/>
     </DefaultSettings>
     
     <Permissions>ReadWriteDocument</Permissions>
@@ -91,14 +90,14 @@
                 <bt:Image id="Icon.80x80" DefaultValue="https://dust.tt/static/favicon@3x.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="Commands.Url" DefaultValue="https://dust-labs-5z4y.vercel.app/excel/commands.html"/>
-                <bt:Url id="Taskpane.Url" DefaultValue="https://dust-labs-5z4y.vercel.app/excel/taskpane.html"/>
+                <bt:Url id="Commands.Url" DefaultValue="https://office-addins.dust.tt/excel/commands.html"/>
+                <bt:Url id="Taskpane.Url" DefaultValue="https://office-addins.dust.tt/excel/taskpane.html"/>
                 <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://dust.tt/docs"/>
             </bt:Urls>
             <bt:ShortStrings>
                 <bt:String id="TaskpaneButton.Label" DefaultValue="Call an Agent"/>
-                <bt:String id="CommandsGroup.Label" DefaultValue="Dust Staging"/>
-                <bt:String id="GetStarted.Title" DefaultValue="Get started with Dust Staging Excel Add-in!"/>
+                <bt:String id="CommandsGroup.Label" DefaultValue="Dust"/>
+                <bt:String id="GetStarted.Title" DefaultValue="Get started with Dust Excel Add-in!"/>
             </bt:ShortStrings>
             <bt:LongStrings>
                 <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Click to use AI Agents in your spreadsheet"/>

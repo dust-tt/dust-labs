@@ -7,14 +7,14 @@
     xsi:type="TaskPaneApp">
     
     <!-- Basic Information -->
-    <Id>8da9739c-3e97-4432-a987-7d1f1d8ffc6a</Id>
+    <Id>f8b2b9d4-0c3f-5e4d-9f7b-2d3e4f5b6c7d</Id>
     <Version>1.0.0.1</Version>
     <ProviderName>Dust</ProviderName>
     <DefaultLocale>en-US</DefaultLocale>
     
     <!-- Display Name and Description -->
-    <DisplayName DefaultValue="Dust Staging PowerPoint Add-in"/>
-    <Description DefaultValue="Use AI Agents in your PowerPoint presentations (Staging)"/>
+    <DisplayName DefaultValue="Dust PowerPoint Add-in"/>
+    <Description DefaultValue="Use AI Agents in your PowerPoint presentations"/>
     <IconUrl DefaultValue="https://dust.tt/static/favicon.png"/>
     <HighResolutionIconUrl DefaultValue="https://dust.tt/static/favicon@3x.png"/>
     <SupportUrl DefaultValue="https://dust.tt/support"/>
@@ -24,7 +24,6 @@
         <AppDomain>https://dust.tt</AppDomain>
         <AppDomain>https://eu.dust.tt</AppDomain>
         <AppDomain>https://office-addins.dust.tt</AppDomain>
-        <AppDomain>https://dust-labs-5z4y.vercel.app</AppDomain>
     </AppDomains>
     
     <!-- Host and Permissions -->
@@ -33,7 +32,7 @@
     </Hosts>
     
     <DefaultSettings>
-        <SourceLocation DefaultValue="https://dust-labs-5z4y.vercel.app/powerpoint/taskpane.html"/>
+        <SourceLocation DefaultValue="https://office-addins.dust.tt/powerpoint/taskpane.html"/>
     </DefaultSettings>
     
     <Permissions>ReadWriteDocument</Permissions>
@@ -93,15 +92,15 @@
                 <bt:Image id="Icon.80x80" DefaultValue="https://dust.tt/static/favicon@3x.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="Commands.Url" DefaultValue="https://dust-labs-5z4y.vercel.app/powerpoint/commands.html"/>
-                <bt:Url id="Taskpane.Url" DefaultValue="https://dust-labs-5z4y.vercel.app/powerpoint/taskpane.html"/>
+                <bt:Url id="Commands.Url" DefaultValue="https://office-addins.dust.tt/powerpoint/commands.html"/>
+                <bt:Url id="Taskpane.Url" DefaultValue="https://office-addins.dust.tt/powerpoint/taskpane.html"/>
                 <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://dust.tt/"/>
             </bt:Urls>
             <bt:ShortStrings>
-                <bt:String id="GetStarted.Title" DefaultValue="Get started with Dust Staging PowerPoint Add-in"/>
-                <bt:String id="DustCommands.Group.Label" DefaultValue="Dust Staging"/>
+                <bt:String id="GetStarted.Title" DefaultValue="Get started with Dust PowerPoint Add-in"/>
+                <bt:String id="DustCommands.Group.Label" DefaultValue="Dust"/>
                 <bt:String id="TaskpaneButton.Label" DefaultValue="Call an Agent"/>
-                <bt:String id="TaskpaneButton.Title" DefaultValue="Dust Staging"/>
+                <bt:String id="TaskpaneButton.Title" DefaultValue="Dust"/>
             </bt:ShortStrings>
             <bt:LongStrings>
                 <bt:String id="GetStarted.Description" DefaultValue="Your add-in loaded successfully. Go to the HOME tab and click the 'Call an Agent' button to get started."/>
