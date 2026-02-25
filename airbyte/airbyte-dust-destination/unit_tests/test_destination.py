@@ -266,17 +266,6 @@ def test_build_title_fallback_to_stream_name():
     assert DestinationDust._build_title("users", {"id": 1}) == "users record"
 
 
-# --- Helpers: _build_table_id ---
-
-
-def test_build_table_id_basic():
-    assert DestinationDust._build_table_id("users", "airbyte_") == "airbyte_users"
-
-
-def test_build_table_id_sanitizes_unsafe_characters():
-    assert DestinationDust._build_table_id("stream@name", "p_") == "p_stream_name"
-
-
 # --- Helpers: _flatten_record ---
 
 

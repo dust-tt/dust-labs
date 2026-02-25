@@ -116,13 +116,6 @@ def _create_log_message(level: Level, message: str) -> AirbyteMessage:
     )
 
 
-def _ensure_state_has_id(message: AirbyteMessage) -> AirbyteMessage:
-    """
-    Pass-through for state messages (id is preserved via PatchedAirbyteMessage).
-    """
-    return message
-
-
 class DestinationDust(Destination):
     def spec(self, *args: Any, **kwargs: Any) -> ConnectorSpecification:
         return super().spec(*args, **kwargs)
@@ -213,8 +206,8 @@ class DestinationDust(Destination):
                 # Yield any pending log messages before state
                 yield from log_messages
                 log_messages.clear()
-                # Ensure state message has an id field
-                yield _ensure_state_has_id(message)
+                # Pass through state messages unchanged
+                yield message
 
             elif message.type == Type.RECORD:
                 record = message.record
@@ -276,8 +269,8 @@ class DestinationDust(Destination):
                     client, stream_rows, table_ids, streams, batch_size
                 )
                 stream_rows.clear()
-                # Ensure state message has an id field
-                yield _ensure_state_has_id(message)
+                # Pass through state messages unchanged
+                yield message
 
             elif message.type == Type.RECORD:
                 record = message.record
@@ -442,14 +435,6 @@ class DestinationDust(Destination):
             if candidate in data and data[candidate]:
                 return str(data[candidate])
         return f"{stream_name} record"
-
-    @staticmethod
-    def _build_table_id(stream_name: str, prefix: str) -> str:
-        """Build a table ID from stream name and prefix. Uses UUID as default if prefix is empty."""
-        if not prefix:
-            return str(uuid.uuid4())
-        raw_id = f"{prefix}{stream_name}"
-        return re.sub(r"[^a-zA-Z0-9_\-]", "_", raw_id)
 
     @staticmethod
     def _flatten_record(data: Mapping[str, Any]) -> dict[str, Any]:
