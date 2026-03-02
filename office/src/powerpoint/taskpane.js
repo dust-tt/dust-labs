@@ -1,4 +1,4 @@
-/* global Office, PowerPoint */
+/* global Office, PowerPoint, DustOfficeAuth, callDustAPI, $ */
 
 const DUST_VERSION = "0.1";
 let processingProgress = { current: 0, total: 0, status: "idle" };
@@ -8,16 +8,53 @@ let processingCancelled = false;
 Office.onReady((info) => {
   if (info.host === Office.HostType.PowerPoint) {
     document.getElementById("myForm").addEventListener("submit", handleSubmit);
-    document.getElementById("saveSetup").onclick = saveCredentials;
-    document.getElementById("updateCredentialsBtn").onclick =
-      showCredentialSetup;
-    document.getElementById("removeCredentialsBtn").onclick =
-      showRemoveConfirmation;
-    document.getElementById("confirmRemove").onclick = removeCredentials;
-    document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
+    document.getElementById("connectWorkOS").onclick = () => {
+      DustOfficeAuth.initiateOAuth(buildAuthOptions());
+    };
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.onclick = () => {
+        showCredentialSetup();
+        removeCredentials();
+      };
+    }
+    const removeBtn = document.getElementById("removeCredentialsBtn");
+    if (removeBtn) {
+      removeBtn.onclick = showRemoveConfirmation;
+    }
+    const confirmRemoveBtn = document.getElementById("confirmRemove");
+    if (confirmRemoveBtn) {
+      confirmRemoveBtn.onclick = removeCredentials;
+    }
+    const cancelRemoveBtn = document.getElementById("cancelRemove");
+    if (cancelRemoveBtn) {
+      cancelRemoveBtn.onclick = hideRemoveConfirmation;
+    }
     document.getElementById("cancelBtn").onclick = cancelProcessing;
 
-    // Initialize
+    let postMessageProcessed = false;
+    window.addEventListener("message", function (event) {
+      console.log("[PowerPoint Taskpane] postMessage received:", event.data, event.origin);
+
+      if (postMessageProcessed) {
+        console.log("[PowerPoint Taskpane] postMessage already processed, ignoring");
+        return;
+      }
+
+      try {
+        const result = JSON.parse(event.data);
+        if (result.success && result.action === "exchange_token" && result.code) {
+          console.log("[PowerPoint Taskpane] Received code via postMessage, exchanging...");
+          postMessageProcessed = true;
+          void DustOfficeAuth.exchangeCodeForToken(result.code, buildAuthOptions());
+        }
+      } catch (error) {
+        console.warn("[PowerPoint Taskpane] Failed to parse postMessage:", error);
+      }
+    });
+
+    DustOfficeAuth.checkOAuthCallback(buildAuthOptions());
+
     checkCredentialsAndInitialize();
   }
 });
@@ -37,26 +74,42 @@ function initializeSelect2() {
 }
 
 // Storage functions
+function getStorageKey(key) {
+  return `dust_powerpoint_${key}`;
+}
+
 function saveToStorage(key, value) {
-  localStorage.setItem(`dust_powerpoint_${key}`, value);
+  if (typeof window.setStorageValue === "function") {
+    window.setStorageValue(key, value);
+    return;
+  }
+
+  const storageKey = getStorageKey(key);
+  if (value === undefined || value === null) {
+    localStorage.removeItem(storageKey);
+  } else {
+    localStorage.setItem(storageKey, value);
+  }
 }
 
 function getFromStorage(key) {
-  return localStorage.getItem(`dust_powerpoint_${key}`);
+  if (typeof window.getStorageValue === "function") {
+    return window.getStorageValue(key);
+  }
+
+  return localStorage.getItem(getStorageKey(key));
 }
 
 // Check credentials and initialize the appropriate view
 function checkCredentialsAndInitialize() {
+  const accessToken = getFromStorage("accessToken");
   const workspaceId = getFromStorage("workspaceId");
-  const dustToken = getFromStorage("dustToken");
 
-  if (workspaceId && dustToken) {
-    // Credentials exist, show the main form
+  if (accessToken && workspaceId) {
     showMainForm();
     loadAssistants();
     initializeSelect2();
   } else {
-    // No credentials, show setup panel
     showCredentialSetup();
   }
 }
@@ -65,27 +118,37 @@ function checkCredentialsAndInitialize() {
 function showCredentialSetup() {
   document.getElementById("credentialSetup").style.display = "block";
   document.getElementById("myForm").style.display = "none";
-  document.getElementById("updateCredentialsBtn").style.display = "none";
 
-  // Hide error message initially
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.style.display = "none";
+  }
+
   const errorDiv = document.getElementById("credentialError");
   if (errorDiv) {
     errorDiv.style.display = "none";
   }
 
-  // Load existing credentials if any
-  const existingWorkspace = getFromStorage("workspaceId");
-  const existingToken = getFromStorage("dustToken");
+  const loadingDiv = document.getElementById("oauthLoading");
+  if (loadingDiv) {
+    loadingDiv.style.display = "none";
+  }
 
-  document.getElementById("workspaceId").value = existingWorkspace || "";
-  document.getElementById("dustToken").value = existingToken || "";
-  document.getElementById("region").value = getFromStorage("region") || "";
+  const removeConfirmation = document.getElementById("removeConfirmation");
+  if (removeConfirmation) {
+    removeConfirmation.style.display = "none";
+  }
 
-  // Show/hide remove button based on whether credentials exist
   const removeBtn = document.getElementById("removeCredentialsBtn");
   if (removeBtn) {
-    removeBtn.style.display =
-      existingWorkspace || existingToken ? "block" : "none";
+    const hasCredentials =
+      !!getFromStorage("accessToken") && !!getFromStorage("workspaceId");
+    removeBtn.style.display = hasCredentials ? "block" : "none";
+  }
+
+  const connectBtn = document.getElementById("connectWorkOS");
+  if (connectBtn) {
+    connectBtn.style.display = "block";
   }
 }
 
@@ -93,7 +156,10 @@ function showCredentialSetup() {
 function showMainForm() {
   document.getElementById("credentialSetup").style.display = "none";
   document.getElementById("myForm").style.display = "block";
-  document.getElementById("updateCredentialsBtn").style.display = "inline-block";
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.style.display = "inline-block";
+  }
 }
 
 // Show remove confirmation
@@ -110,133 +176,73 @@ function hideRemoveConfirmation() {
 
 // Remove credentials
 function removeCredentials() {
-  // Clear all stored credentials
-  localStorage.removeItem("dust_powerpoint_workspaceId");
-  localStorage.removeItem("dust_powerpoint_dustToken");
-  localStorage.removeItem("dust_powerpoint_region");
-  localStorage.removeItem("dust_powerpoint_credentialsConfigured");
+  [
+    "workspaceId",
+    "accessToken",
+    "refreshToken",
+    "region",
+    "credentialsConfigured",
+    "user",
+    "oauthCodeVerifier",
+    "oauthRedirectUri",
+  ].forEach((key) => {
+    saveToStorage(key, null);
+  });
 
-  // Clear input fields
-  document.getElementById("workspaceId").value = "";
-  document.getElementById("dustToken").value = "";
-  document.getElementById("region").value = "";
+  const removeBtn = document.getElementById("removeCredentialsBtn");
+  if (removeBtn) {
+    removeBtn.style.display = "none";
+  }
+  const removeConfirmation = document.getElementById("removeConfirmation");
+  if (removeConfirmation) {
+    removeConfirmation.style.display = "none";
+  }
 
-  // Hide remove button and confirmation
-  document.getElementById("removeCredentialsBtn").style.display = "none";
-  document.getElementById("removeConfirmation").style.display = "none";
+  const connectBtn = document.getElementById("connectWorkOS");
+  if (connectBtn) {
+    connectBtn.style.display = "block";
+  }
 
-  // Hide error message
   const errorDiv = document.getElementById("credentialError");
   if (errorDiv) {
     errorDiv.style.display = "none";
   }
 
-  // Clear the assistant dropdown
   const select = document.getElementById("assistant");
-  select.innerHTML = '<option value=""></option>';
-  select.disabled = true;
+  if (select) {
+    select.innerHTML = '<option value=""></option>';
+    select.disabled = true;
+  }
 
-  // Reset Select2
   $("#assistant").select2({
     placeholder: "Loading agents...",
     allowClear: true,
     width: "100%",
   });
 
-  // Clear any error messages in the main form
   const loadError = document.getElementById("loadError");
   if (loadError) {
     loadError.style.display = "none";
   }
 
-  // Show credential setup as if starting fresh
   document.getElementById("credentialSetup").style.display = "block";
   document.getElementById("myForm").style.display = "none";
-  document.getElementById("updateCredentialsBtn").style.display = "none";
-}
-
-async function saveCredentials() {
-  const workspaceId = document.getElementById("workspaceId").value;
-  const dustToken = document.getElementById("dustToken").value;
-  const region = document.getElementById("region").value;
-
-  // Hide any previous error
-  const errorDiv = document.getElementById("credentialError");
-  if (errorDiv) {
-    errorDiv.style.display = "none";
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.style.display = "none";
   }
 
-  if (!workspaceId || !dustToken) {
-    if (errorDiv) {
-      errorDiv.textContent = "Please enter both Workspace ID and API Key";
-      errorDiv.style.display = "block";
-    }
-    return;
-  }
-
-  // Show loading state
-  const saveBtn = document.getElementById("saveSetup");
-  const originalText = saveBtn.textContent;
-  saveBtn.disabled = true;
-  saveBtn.innerHTML = '<span class="spinner"></span> Validating...';
-
-  try {
-    // Temporarily save credentials to test them
-    saveToStorage("workspaceId", workspaceId);
-    saveToStorage("dustToken", dustToken);
-    saveToStorage("region", region);
-
-    // Test credentials by fetching agents using the proxy
-    const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
-    const data = await callDustAPI(apiPath);
-
-    // Credentials are valid, save the configured flag
-    saveToStorage("credentialsConfigured", "true");
-
-    // Hide error if it was showing
-    if (errorDiv) {
-      errorDiv.style.display = "none";
-    }
-
-    // Switch to main form
-    showMainForm();
-    loadAssistants();
-    initializeSelect2();
-  } catch (error) {
-    // Remove invalid credentials
-    localStorage.removeItem("dust_powerpoint_workspaceId");
-    localStorage.removeItem("dust_powerpoint_dustToken");
-    localStorage.removeItem("dust_powerpoint_region");
-    localStorage.removeItem("dust_powerpoint_credentialsConfigured");
-
-    // Show error message
-    if (errorDiv) {
-      errorDiv.textContent =
-        "❌ Invalid credentials. Please check your Workspace ID and API Key.";
-      errorDiv.style.display = "block";
-    }
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = originalText;
-  }
+  showCredentialSetup();
 }
 
 // Dust API functions
-function getDustBaseUrl() {
-  const region = getFromStorage("region");
-  if (region && region.toLowerCase() === "eu") {
-    return "https://eu.dust.tt";
-  }
-  return "https://dust.tt";
-}
-
 async function loadAssistants() {
-  const token = getFromStorage("dustToken");
+  const token = getFromStorage("accessToken");
   const workspaceId = getFromStorage("workspaceId");
 
   if (!token || !workspaceId) {
     const errorDiv = document.getElementById("loadError");
-    errorDiv.textContent = "❌ Please configure Dust credentials first";
+    errorDiv.textContent = "❌ Please connect your Dust account first";
     errorDiv.style.display = "block";
     $("#assistant").select2({
       placeholder: "Failed to load agents",
@@ -586,7 +592,7 @@ async function handleSubmit(e) {
 async function processWithAssistant(assistantId, instructions, scope) {
   const MAX_CONCURRENT = 10; // Process up to 10 text blocks concurrently
 
-  const token = getFromStorage("dustToken");
+  const token = getFromStorage("accessToken");
   const workspaceId = getFromStorage("workspaceId");
 
   if (!token || !workspaceId) {
@@ -1157,4 +1163,74 @@ function cancelProcessing() {
       document.getElementById("status").innerHTML = "";
     }, 2000);
   }, 500);
+}
+
+function buildAuthOptions() {
+  return {
+    errorElement: document.getElementById("credentialError"),
+    loadingElement: document.getElementById("oauthLoading"),
+    connectButton: document.getElementById("connectWorkOS"),
+    onAuthSuccess: handleOAuthSuccess,
+    onAuthError: (error) => {
+      console.error("[PowerPoint Taskpane] OAuth error:", error);
+    },
+  };
+}
+
+async function handleOAuthSuccess(data) {
+  const { access_token, user, refresh_token } = data;
+
+  if (!access_token) {
+    throw new Error("No access token received");
+  }
+
+  saveToStorage("accessToken", access_token);
+  saveToStorage("refreshToken", refresh_token);
+
+  const { workspaceId, region } = DustOfficeAuth.decodeToken(access_token);
+
+  saveToStorage("workspaceId", workspaceId);
+  saveToStorage("region", region);
+  saveToStorage("user", JSON.stringify(user));
+
+  const loadingDiv = document.getElementById("oauthLoading");
+  const errorDiv = document.getElementById("credentialError");
+  if (loadingDiv) {
+    loadingDiv.style.display = "none";
+  }
+  if (errorDiv) {
+    errorDiv.style.display = "none";
+  }
+
+  const connectBtn = document.getElementById("connectWorkOS");
+  if (connectBtn) {
+    connectBtn.style.display = "none";
+  }
+
+  try {
+    if (!workspaceId) {
+      throw new Error("Workspace ID not found. Please ensure your WorkOS integration is configured correctly.");
+    }
+
+    const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+    await callDustAPI(apiPath);
+
+    saveToStorage("credentialsConfigured", "true");
+
+    showMainForm();
+    loadAssistants();
+    initializeSelect2();
+  } catch (error) {
+    console.error("[PowerPoint Taskpane] Failed to validate token:", error);
+    if (errorDiv) {
+      errorDiv.textContent = "❌ " + error.message;
+      errorDiv.style.display = "block";
+    }
+    if (connectBtn) {
+      connectBtn.style.display = "block";
+    }
+    if (loadingDiv) {
+      loadingDiv.style.display = "none";
+    }
+  }
 }
