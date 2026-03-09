@@ -79,7 +79,7 @@
         const redirectPath = pathParts.join('/');
         const callbackUrl = `${window.location.origin}${redirectPath}`;
 
-        console.log('[DustZendeskAuth] Zendesk callback URL:', callbackUrl);
+        // Zendesk callback URL constructed from current deployment path
 
         return callbackUrl;
     }
@@ -89,7 +89,7 @@
         // This avoids the issue of Zendesk's dynamic deployment hashes breaking OAuth
         const redirectUri = `${getDustBaseUrl()}/api/v1/auth/callback`;
 
-        console.log('[DustZendeskAuth] OAuth redirect URI (stable):', redirectUri);
+        // OAuth redirect URI using stable dust.tt endpoint
 
         return redirectUri;
     }
@@ -275,7 +275,7 @@
         const ui = normalizeOptions(options);
 
         if (oauthCodeBeingExchanged === code) {
-            console.log("[DustZendeskAuth] Code already being exchanged, ignoring duplicate request");
+            console.warn("[DustZendeskAuth] Code already being exchanged, ignoring duplicate request");
             return;
         }
 
@@ -302,16 +302,13 @@
                 grant_type: "authorization_code",
             });
 
-            console.log("[DustZendeskAuth] Exchanging code for token...", {
-                endpoint: tokenEndpoint,
-                hasRequestFunction: !!ui.requestFunction,
-            });
+            // Exchanging code for token
 
             let data;
 
             if (ui.requestFunction) {
                 // Use Zendesk proxy to avoid CORS
-                console.log("[DustZendeskAuth] Using Zendesk proxy for token exchange");
+                // Using Zendesk proxy for token exchange
                 try {
                     data = await ui.requestFunction({
                         url: tokenEndpoint,
@@ -326,7 +323,7 @@
                 }
             } else {
                 // Direct fetch (fallback)
-                console.log("[DustZendeskAuth] Using direct fetch for token exchange");
+                // Using direct fetch for token exchange
                 const response = await fetch(tokenEndpoint, {
                     method: "POST",
                     headers: {
@@ -350,7 +347,7 @@
                 data = await response.json();
             }
 
-            console.log("[DustZendeskAuth] Token exchange successful");
+            // Token exchange successful
             resetOAuthState();
 
             if (ui.onAuthSuccess) {
@@ -382,10 +379,7 @@
         try {
             const { authUrl, redirectUri } = await prepareAuthorizationRequest();
 
-            console.log("[DustZendeskAuth] Authorization parameters prepared:", {
-                redirectUri,
-                authUrlPreview: authUrl.substring(0, 150) + "...",
-            });
+            // Authorization parameters prepared
 
             // Open OAuth window
             const width = 600;
@@ -455,6 +449,7 @@
             const accessToken = getAuthStorage("accessToken");
             if (accessToken) {
                 clearInterval(interval);
+                clearTimeout(timeout);
                 resetOAuthState();
                 hideLoading(ui.loadingElement);
                 showConnect(ui.connectButton);
@@ -470,7 +465,7 @@
             }
         }, 1000);
 
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
             clearInterval(interval);
             hideLoading(ui.loadingElement);
             showConnect(ui.connectButton);

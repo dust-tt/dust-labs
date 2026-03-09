@@ -77,6 +77,28 @@ function getSourceUrlFromReference(reference) {
   let defaultAssistantIds;
   let isAuthenticated = false;
 
+  // Track timeouts/intervals for cleanup
+  const activeTimeouts = [];
+  const activeIntervals = [];
+
+  function trackTimeout(fn, delay) {
+    const id = setTimeout(fn, delay);
+    activeTimeouts.push(id);
+    return id;
+  }
+
+  function trackInterval(fn, delay) {
+    const id = setInterval(fn, delay);
+    activeIntervals.push(id);
+    return id;
+  }
+
+  // Cleanup on app destroy
+  client.on('app.willDestroy', function () {
+    activeTimeouts.forEach(clearTimeout);
+    activeIntervals.forEach(clearInterval);
+  });
+
   // Helper function to get Dust base URL based on region
   function getDustBaseUrl() {
     // Get region from OAuth token
@@ -84,10 +106,8 @@ function getSourceUrlFromReference(reference) {
 
     // Use EU endpoint only if region is exactly "europe-west1"
     if (region === "europe-west1") {
-      console.log(`[Zendesk App] Using EU region: ${region} -> https://eu.dust.tt`);
       return "https://eu.dust.tt";
     }
-    console.log(`[Zendesk App] Using US region: ${region || 'default'} -> https://dust.tt`);
     return "https://dust.tt";
   }
 
@@ -238,7 +258,7 @@ function getSourceUrlFromReference(reference) {
 
       // Handle code exchange (callback sends code back to main app)
       if (result.success && result.action === 'exchange_token' && result.code) {
-        console.log('[Zendesk App] Received OAuth code via postMessage, exchanging for token...');
+        // Received OAuth code via postMessage, exchanging for token
         void DustZendeskAuth.exchangeCodeForToken(result.code, {
           errorElement: document.getElementById("authError"),
           loadingElement: document.getElementById("authLoading"),
@@ -250,7 +270,7 @@ function getSourceUrlFromReference(reference) {
       }
       // Handle direct access token (fallback)
       else if (result.success && result.access_token) {
-        console.log('[Zendesk App] Received OAuth access token via postMessage');
+        // Received OAuth access token via postMessage
         void handleOAuthSuccess(result);
       }
       // Handle errors
@@ -547,9 +567,7 @@ function getSourceUrlFromReference(reference) {
                 hasContent = true;
                 const agentName = message.configuration?.name || 'Assistant';
                 
-                // Debug: log the entire message structure
-                console.log('Agent message received:', JSON.stringify(message, null, 2));
-                console.log('Message status:', message.status);
+                // Process agent message
                 
                 // Extract chain of thought if available
                 const chainOfThought = message.chainOfThought || '';
@@ -576,7 +594,7 @@ function getSourceUrlFromReference(reference) {
                   if (!text || !text.trim()) {
                     if (existingChainOfThought) {
                       existingChainOfThought.classList.add('fade-out');
-                      setTimeout(() => {
+                      trackTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
                         }
@@ -584,19 +602,19 @@ function getSourceUrlFromReference(reference) {
                     }
                     return '';
                   }
-                  
+
                   const escaped = text
                     .replace(/&/g, '&amp;')
                     .replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#39;');
-                  
+
                   if (existingChainOfThought) {
                     // Update existing content
                     existingChainOfThought.innerHTML = escaped;
                     if (!existingChainOfThought.classList.contains('visible')) {
-                      setTimeout(() => existingChainOfThought.classList.add('visible'), 10);
+                      trackTimeout(() => existingChainOfThought.classList.add('visible'), 10);
                     }
                     return ''; // Return empty since element already exists in DOM
                   } else {
@@ -607,19 +625,6 @@ function getSourceUrlFromReference(reference) {
                 
                 const chainOfThoughtHtml = formatChainOfThought(chainOfThought);
                 
-                // Debug logging for chain of thought
-                if (chainOfThought && chainOfThought.trim()) {
-                  console.log('Chain of thought found:', chainOfThought);
-                  console.log('Chain of thought HTML:', chainOfThoughtHtml);
-                } else {
-                  console.log('No chain of thought found or empty');
-                }
-                
-                // Test: force show chain of thought for debugging (remove this after testing)
-                // const testChainOfThought = message.chainOfThought ? formatChainOfThought('• Testing chain of thought display\n• This should appear immediately') : '';
-                // if (message.chainOfThought) {
-                //   console.log('FORCED TEST: Displaying test chain of thought');
-                // }
                 
                 if (message.status === 'succeeded') {
                   // Message is complete - hide chain of thought and show final answer
@@ -630,14 +635,14 @@ function getSourceUrlFromReference(reference) {
                     const existingChainOfThought = document.getElementById(`chain-of-thought-${uniqueId}`);
                     if (existingChainOfThought) {
                       existingChainOfThought.classList.add('fade-out');
-                      setTimeout(() => {
+                      trackTimeout(() => {
                         if (existingChainOfThought.parentNode) {
                           existingChainOfThought.remove();
                         }
                       }, 200);
                     }
-                    
-                    setTimeout(() => {
+
+                    trackTimeout(() => {
                       assistantMessageElement.innerHTML = `
                         <h4>@${agentName}:</h4>
                         <pre class=\"markdown-content\">${htmlAnswer}</pre>
@@ -670,7 +675,7 @@ function getSourceUrlFromReference(reference) {
                         `;
                         
                         // Trigger animation after DOM update
-                        setTimeout(() => {
+                        trackTimeout(() => {
                           const element = document.getElementById(`chain-of-thought-${uniqueId}`);
                           if (element) {
                             element.classList.add('visible');
@@ -719,7 +724,7 @@ function getSourceUrlFromReference(reference) {
                         `;
                         
                         // Trigger animation after DOM update
-                        setTimeout(() => {
+                        trackTimeout(() => {
                           const element = document.getElementById(`chain-of-thought-${uniqueId}`);
                           if (element) {
                             element.classList.add('visible');
@@ -762,12 +767,12 @@ function getSourceUrlFromReference(reference) {
         document.getElementById('dustResponse').scrollTop = document.getElementById('dustResponse').scrollHeight;
         
         if (!isCompleted) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise(resolve => { const t = setTimeout(resolve, pollInterval); activeTimeouts.push(t); });
         }
         
       } catch (error) {
         console.error('Error polling conversation events:', error);
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise(resolve => { const t = setTimeout(resolve, pollInterval); activeTimeouts.push(t); });
       }
     }
     
