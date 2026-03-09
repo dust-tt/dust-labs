@@ -3,12 +3,19 @@ const code = urlParams.get("code");
 const error = urlParams.get("error");
 const errorDescription = urlParams.get("error_description");
 
+// Track timeouts for cleanup
+const pendingTimeouts = [];
+function safeTimeout(fn, delay) {
+    const id = setTimeout(fn, delay);
+    pendingTimeouts.push(id);
+    return id;
+}
+window.addEventListener('beforeunload', function () {
+    pendingTimeouts.forEach(clearTimeout);
+});
+
 async function handleCallback() {
-    console.log("[OAuth Callback] Handling callback:", {
-        code: !!code,
-        error,
-        hasOpener: !!window.opener,
-    });
+    // Handle OAuth callback
 
     const statusEl = document.querySelector(".status-message");
     const errorEl = document.getElementById("error");
@@ -44,7 +51,7 @@ async function handleCallback() {
         }
 
         // Close window after a delay
-        setTimeout(() => {
+        safeTimeout(() => {
             window.close();
         }, 3000);
         return;
@@ -79,7 +86,7 @@ async function handleCallback() {
         }
 
         // Close window after a delay
-        setTimeout(() => {
+        safeTimeout(() => {
             window.close();
         }, 3000);
         return;
@@ -87,7 +94,7 @@ async function handleCallback() {
 
     // We have a code - send it back to the parent window for token exchange
     // The parent has access to the code_verifier in its localStorage
-    console.log("[OAuth Callback] Sending code to parent window for token exchange");
+    // Send code to parent window for token exchange
 
     if (window.opener && !window.opener.closed) {
         try {
@@ -113,7 +120,7 @@ async function handleCallback() {
             }
 
             // Close window after a delay
-            setTimeout(() => {
+            safeTimeout(() => {
                 window.close();
             }, 2000);
 
@@ -140,6 +147,6 @@ async function handleCallback() {
 }
 
 // Run callback handler after a brief delay
-setTimeout(() => {
+safeTimeout(() => {
     handleCallback();
 }, 100);
