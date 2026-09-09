@@ -8,34 +8,17 @@
   "domainWhitelist": ["dust.tt", "eu.dust.tt"],
   "parameters": [
     {
-      "name": "dust_api_key",
-      "type": "text",
-      "secure": true,
-      "required": true
-    },
-    {
-      "name": "dust_workspace_id",
-      "type": "text",
-      "secure": true,
-      "required": true
-    },
-    {
-      "name": "region",
-      "type": "text",
-      "required": false,
-      "default": "us",
-      "helpText": "Optional: Set to 'eu' for EU region. Leave empty for default region."
-    },
-    {
       "name": "default_assistant_ids",
       "type": "multiline",
-      "required": false
+      "required": false,
+      "helpText": "Optional: Comma or newline-separated list of assistant IDs to show. Leave empty to show all assistants."
     },
     {
       "name": "hide_customer_information",
       "type": "checkbox",
       "default": false,
-      "required": false
+      "required": false,
+      "helpText": "Hide customer name and email in ticket information sent to Dust."
     }
   ],
   "defaultLocale": "en",
@@ -45,7 +28,7 @@
       "ticket_sidebar": "assets/iframe.html"
     }
   },
-  "version": "1.1.0",
+  "version": "2.0.0",
   "frameworkVersion": "2.0",
   "screenshots": [
     {
