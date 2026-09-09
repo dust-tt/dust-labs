@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://docs.dust.tt/",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/excel/dust-api.js",
