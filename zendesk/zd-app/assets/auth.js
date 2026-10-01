@@ -1,5 +1,6 @@
 (function () {
     const PKCE_VERIFIER_LENGTH = 64;
+    const TOKEN_REFRESH_MARGIN_MS = 60 * 1000; // clock skew + request latency
     const STORAGE_PREFIX = 'dust_zendesk_';
 
     let oauthCodeBeingExchanged = null;
@@ -110,8 +111,7 @@
 
     function isTokenFresh(token) {
         const payload = token && decodeJwtPayload(token);
-        // 60s margin for clock skew and request latency.
-        return !!(payload && payload.exp && payload.exp * 1000 - 60000 > Date.now());
+        return !!(payload && payload.exp && payload.exp * 1000 - TOKEN_REFRESH_MARGIN_MS > Date.now());
     }
 
     // Returns a non-expired access token, refreshing only when needed.
