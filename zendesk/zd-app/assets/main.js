@@ -224,6 +224,18 @@ function getSourceUrlFromReference(reference) {
     showAuthUI();
   }
 
+  // Expired/rejected token: drop it and ask the user to log in again,
+  // instead of retrying the same stale token forever.
+  function isAuthError(error) {
+    return !!(error && (error.sessionExpired || error.status === 401));
+  }
+
+  function handleSessionExpired() {
+    handleLogout();
+    hideLoadingSpinner();
+    showAuthError("Your Dust session expired. Please log in again.");
+  }
+
   // Set up OAuth login button
   const loginButton = document.getElementById("loginButton");
   if (loginButton) {
@@ -325,7 +337,9 @@ function getSourceUrlFromReference(reference) {
     }
   } catch (error) {
     hideLoadingSpinner();
-    if (isAuthenticated) {
+    if (isAuthError(error)) {
+      handleSessionExpired();
+    } else if (isAuthenticated) {
       showErrorMessage(
         error.message || "Failed to load assistants. Please try again later."
       );
@@ -368,22 +382,13 @@ function getSourceUrlFromReference(reference) {
 
   async function loadAssistants(allowedAssistantIds = null) {
     // Get OAuth credentials
-    let accessToken = DustZendeskAuth.getAuthStorage("accessToken");
     const workspaceId = DustZendeskAuth.getAuthStorage("workspaceId");
 
-    if (!accessToken || !workspaceId) {
+    if (!DustZendeskAuth.getAuthStorage("accessToken") || !workspaceId) {
       throw new Error("Not authenticated. Please login to continue.");
     }
 
-    // Try to refresh token if needed
-    try {
-      const refreshedToken = await DustZendeskAuth.tryRefreshAccessToken(client.request.bind(client));
-      if (refreshedToken) {
-        accessToken = refreshedToken;
-      }
-    } catch (error) {
-      console.warn("Failed to refresh token:", error);
-    }
+    const accessToken = await DustZendeskAuth.getValidAccessToken(client.request.bind(client));
 
     // User is already validated through OAuth, no need to check again
     const authorization = `Bearer ${accessToken}`;
@@ -547,11 +552,12 @@ function getSourceUrlFromReference(reference) {
           url: eventsUrl,
           type: 'GET',
           headers: {
-            Authorization: authorization,
+            // Fresh token per poll: polling can outlive the access token.
+            Authorization: `Bearer ${await DustZendeskAuth.getValidAccessToken(client.request.bind(client))}`,
           },
           secure: isProd,
         };
-        
+
         const eventsResponse = await client.request(eventsOptions);
         
         if (eventsResponse && eventsResponse.conversation && eventsResponse.conversation.content) {
@@ -771,6 +777,9 @@ function getSourceUrlFromReference(reference) {
         }
         
       } catch (error) {
+        if (isAuthError(error)) {
+          throw error;
+        }
         console.error('Error polling conversation events:', error);
         await new Promise(resolve => { const t = setTimeout(resolve, pollInterval); activeTimeouts.push(t); });
       }
@@ -796,22 +805,13 @@ function getSourceUrlFromReference(reference) {
 
     try {
       // Get OAuth credentials
-      let accessToken = DustZendeskAuth.getAuthStorage("accessToken");
       const workspaceId = DustZendeskAuth.getAuthStorage("workspaceId");
 
-      if (!accessToken || !workspaceId) {
+      if (!DustZendeskAuth.getAuthStorage("accessToken") || !workspaceId) {
         throw new Error("Not authenticated. Please login to continue.");
       }
 
-      // Try to refresh token if needed
-      try {
-        const refreshedToken = await DustZendeskAuth.tryRefreshAccessToken(client.request.bind(client));
-        if (refreshedToken) {
-          accessToken = refreshedToken;
-        }
-      } catch (error) {
-        console.warn("Failed to refresh token:", error);
-      }
+      const accessToken = await DustZendeskAuth.getValidAccessToken(client.request.bind(client));
 
       const metadata = await client.metadata();
       const hideCustomerInformation =
@@ -1028,6 +1028,11 @@ function getSourceUrlFromReference(reference) {
       await client.invoke("resize", { width: "100%", height: "600px" });
     } catch (error) {
       console.error("Error receiving response from Dust:", error);
+
+      if (isAuthError(error)) {
+        handleSessionExpired();
+        return;
+      }
 
       const assistantMessageElement = document.getElementById(
         `assistant-${uniqueId}`

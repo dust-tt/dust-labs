@@ -1,5 +1,6 @@
 (function () {
     const PKCE_VERIFIER_LENGTH = 64;
+    const TOKEN_REFRESH_MARGIN_MS = 60 * 1000; // clock skew + request latency
     const STORAGE_PREFIX = 'dust_zendesk_';
 
     let oauthCodeBeingExchanged = null;
@@ -106,62 +107,65 @@
         return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
-    async function tryRefreshAccessToken(requestFunction) {
-        const refreshToken = getAuthStorage("refreshToken");
-        if (!refreshToken) {
-            return null;
+    let refreshPromise = null;
+
+    function isTokenFresh(token) {
+        const payload = token && decodeJwtPayload(token);
+        return !!(payload && payload.exp && payload.exp * 1000 - TOKEN_REFRESH_MARGIN_MS > Date.now());
+    }
+
+    // Returns a non-expired access token, refreshing only when needed.
+    // WorkOS refresh tokens are single-use: refreshing on every call (and from
+    // several ticket tabs at once) burns them, so we only refresh near expiry.
+    async function getValidAccessToken(requestFunction) {
+        const accessToken = getAuthStorage("accessToken");
+        if (isTokenFresh(accessToken)) {
+            return accessToken;
         }
+        if (!refreshPromise) {
+            refreshPromise = refreshAccessToken(requestFunction).finally(() => {
+                refreshPromise = null;
+            });
+        }
+        return refreshPromise;
+    }
 
+    async function refreshAccessToken(requestFunction) {
+        const refreshToken = getAuthStorage("refreshToken");
         try {
-            const tokenEndpoint = `${getAuthApiBaseUrl()}/authenticate`;
-            let data;
-
-            if (requestFunction) {
-                // Use Zendesk proxy to avoid CORS
-                data = await requestFunction({
-                    url: tokenEndpoint,
-                    type: "POST",
-                    contentType: "application/x-www-form-urlencoded",
-                    data: new URLSearchParams({
-                        grant_type: "refresh_token",
-                        refresh_token: refreshToken,
-                    }).toString(),
-                    secure: true,
-                });
-            } else {
-                // Direct fetch (fallback)
-                const response = await fetch(tokenEndpoint, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    body: new URLSearchParams({
-                        grant_type: "refresh_token",
-                        refresh_token: refreshToken,
-                    }).toString(),
-                });
-
-                if (!response.ok) {
-                    console.error("[DustZendeskAuth] Token refresh failed:", response.status, response.statusText);
-                    setAuthStorage("accessToken", null);
-                    setAuthStorage("refreshToken", null);
-                    return null;
-                }
-
-                data = await response.json();
+            if (!refreshToken) {
+                throw new Error("No refresh token");
             }
-
-            if (data.access_token) {
-                setAuthStorage("accessToken", data.access_token);
+            // Use Zendesk proxy to avoid CORS
+            const data = await requestFunction({
+                url: `${getAuthApiBaseUrl()}/authenticate`,
+                type: "POST",
+                contentType: "application/x-www-form-urlencoded",
+                data: new URLSearchParams({
+                    grant_type: "refresh_token",
+                    refresh_token: refreshToken,
+                }).toString(),
+                secure: true,
+            });
+            if (!data || !data.access_token) {
+                throw new Error("No access token in refresh response");
             }
+            setAuthStorage("accessToken", data.access_token);
             if (data.refresh_token) {
                 setAuthStorage("refreshToken", data.refresh_token);
             }
-
-            return data.access_token || getAuthStorage("accessToken");
+            return data.access_token;
         } catch (error) {
-            console.error("[DustZendeskAuth] Token refresh error:", error);
-            return null;
+            // Another ticket tab may have rotated the refresh token first.
+            const latest = getAuthStorage("accessToken");
+            if (isTokenFresh(latest)) {
+                return latest;
+            }
+            console.error("[DustZendeskAuth] Token refresh failed, clearing session:", error);
+            clearAuth();
+            const sessionError = new Error("Your Dust session expired. Please log in again.");
+            sessionError.sessionExpired = true;
+            throw sessionError;
         }
     }
 
@@ -496,7 +500,7 @@
         getZendeskCallbackUrl,
         decodeJwtPayload,
         decodeToken,
-        tryRefreshAccessToken,
+        getValidAccessToken,
         getAuthStorage,
         setAuthStorage,
         clearAuth,
