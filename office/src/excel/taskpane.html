@@ -68,48 +68,27 @@
       <!-- Credential Setup Panel -->
       <div id="credentialSetup" class="credential-setup">
         <p class="setup-message">
-          To get started, please configure your Dust credentials
+          To get started, please connect your Dust account
         </p>
         <div
           id="credentialError"
           class="error-message"
           style="display: none"
         ></div>
-        <div class="form-group">
-          <label class="form-label">Workspace ID:</label>
-          <input
-            type="text"
-            id="workspaceId"
-            class="form-input"
-            placeholder="Enter your Dust Workspace ID"
-          />
+        <div id="oauthLoading" style="display: none; text-align: center; padding: 20px;">
+          <div class="spinner"></div>
+          <p style="margin-top: 12px; color: #6b7280;">Connecting...</p>
         </div>
-        <div class="form-group">
-          <label class="form-label">API Key:</label>
-          <input
-            type="password"
-            id="dustToken"
-            class="form-input"
-            placeholder="Enter your Dust API Key"
-          />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Region (optional):</label>
-          <input
-            type="text"
-            id="region"
-            class="form-input"
-            placeholder="Leave empty for US or enter 'eu' for EU"
-          />
-        </div>
-        <button id="saveSetup" class="btn btn-primary">Save Credentials</button>
+        <button id="connectWorkOS" class="btn btn-primary" style="margin-top: 0;">
+          Login to Dust
+        </button>
         <div id="removeConfirmation" style="display: none; margin-top: 12px">
           <p class="confirm-message">
-            Are you sure you want to remove your credentials?
+            Are you sure you want to disconnect your account?
           </p>
           <div style="display: flex; gap: 8px">
             <button id="confirmRemove" class="btn btn-danger" style="flex: 1">
-              Yes, Remove
+              Yes, Disconnect
             </button>
             <button id="cancelRemove" class="btn btn-secondary" style="flex: 1">
               Cancel
@@ -121,7 +100,7 @@
           class="btn btn-danger"
           style="display: none; margin-top: 12px"
         >
-          Remove Credentials
+          Disconnect Account
         </button>
       </div>
 
@@ -213,16 +192,17 @@
         </button>
       </form>
 
-      <!-- Update Credentials Button (bottom left, tiny) -->
-      <button id="updateCredentialsBtn" class="tiny-link" style="display: none">
-        Update Credentials
+      <!-- Logout link -->
+      <button id="logoutBtn" class="tiny-link" style="display: none" type="button">
+        Disconnect from Dust
       </button>
 
-      <div class="version">v0.1.41</div>
+      <div class="version">v0.2.0</div>
     </div>
 
     <!-- JavaScript -->
-    <script src="dust-api.js"></script>
+    <script src="../shared/dust-api.js"></script>
+    <script src="../shared/auth.js"></script>
     <script src="taskpane.js"></script>
   </body>
 </html>

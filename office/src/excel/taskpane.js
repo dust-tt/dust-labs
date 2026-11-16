@@ -1,27 +1,71 @@
-/* global Office, Excel */
+/* global Office, Excel, DustOfficeAuth, $, callDustAPI */
 
-const DUST_VERSION = "0.1";
 let processingProgress = { current: 0, total: 0, status: "idle" };
 let cancelRequested = false;
 let currentAbortController = null;
 let currentProcessingId = null;
+
+function buildAuthOptions() {
+    return {
+        errorElement: document.getElementById("credentialError"),
+        loadingElement: document.getElementById("oauthLoading"),
+        connectButton: document.getElementById("connectWorkOS"),
+        onAuthSuccess: handleOAuthSuccess,
+        onAuthError: (error) => {
+            console.error("[Taskpane] OAuth error:", error);
+        },
+    };
+}
 
 // Initialize Office
 Office.onReady((info) => {
     if (info.host === Office.HostType.Excel) {
         document.getElementById("selectCellsBtn").onclick = useSelection;
         document.getElementById("selectTargetBtn").onclick = useTargetSelection;
-        document.getElementById("cellRange").addEventListener("input", function() {
-            updateRangeInfo(this.value);
+        document.getElementById("cellRange").addEventListener("input", function () {
+            void updateRangeInfo(this.value);
         });
         document.getElementById("myForm").addEventListener("submit", handleSubmit);
-        document.getElementById("saveSetup").onclick = saveCredentials;
-        document.getElementById("updateCredentialsBtn").onclick = showCredentialSetup;
+        document.getElementById("connectWorkOS").onclick = () => {
+            DustOfficeAuth.initiateOAuth(buildAuthOptions());
+        };
+        const logoutBtn = document.getElementById("logoutBtn");
+        logoutBtn.onclick = () => {
+            showCredentialSetup();
+            removeCredentials();
+        };
         document.getElementById("removeCredentialsBtn").onclick = showRemoveConfirmation;
         document.getElementById("cancelBtn").onclick = cancelProcessing;
         document.getElementById("confirmRemove").onclick = removeCredentials;
         document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
-        
+
+        // Listen for postMessage from OAuth callback (fallback if Office dialog API doesn't work)
+        // Use once: true to prevent multiple handlers, or check if already processed
+        let postMessageProcessed = false;
+        window.addEventListener('message', function (event) {
+            console.log('[Taskpane] postMessage received:', event.data, event.origin);
+
+            // Prevent processing the same message multiple times
+            if (postMessageProcessed) {
+                console.log('[Taskpane] postMessage already processed, ignoring');
+                return;
+            }
+
+            try {
+                const result = JSON.parse(event.data);
+                if (result.success && result.action === 'exchange_token' && result.code) {
+                    console.log('[Taskpane] Received code via postMessage, exchanging...');
+                    postMessageProcessed = true; // Mark as processed
+                    void DustOfficeAuth.exchangeCodeForToken(result.code, buildAuthOptions());
+                }
+            } catch (e) {
+                console.warn('[Taskpane] Failed to parse postMessage:', e);
+            }
+        });
+
+        // Check for OAuth callback
+        DustOfficeAuth.checkOAuthCallback(buildAuthOptions());
+
         // Initialize
         checkCredentialsAndInitialize();
     }
@@ -34,7 +78,7 @@ function initializeSelect2() {
         allowClear: true,
         width: "100%",
         language: {
-            noResults: function() {
+            noResults: function () {
                 return "No agents found";
             }
         }
@@ -43,7 +87,12 @@ function initializeSelect2() {
 
 // Storage functions
 function saveToStorage(key, value) {
-    localStorage.setItem(`dust_excel_${key}`, value);
+    const storageKey = `dust_excel_${key}`;
+    if (value === undefined || value === null) {
+        localStorage.removeItem(storageKey);
+        return;
+    }
+    localStorage.setItem(storageKey, value);
 }
 
 function getFromStorage(key) {
@@ -52,10 +101,10 @@ function getFromStorage(key) {
 
 // Check credentials and initialize the appropriate view
 function checkCredentialsAndInitialize() {
+    const accessToken = getFromStorage("accessToken");
     const workspaceId = getFromStorage("workspaceId");
-    const dustToken = getFromStorage("dustToken");
-    
-    if (workspaceId && dustToken) {
+
+    if (accessToken && workspaceId) {
         // Credentials exist, show the main form
         showMainForm();
         loadAssistants();
@@ -70,26 +119,27 @@ function checkCredentialsAndInitialize() {
 function showCredentialSetup() {
     document.getElementById("credentialSetup").style.display = "block";
     document.getElementById("myForm").style.display = "none";
-    document.getElementById("updateCredentialsBtn").style.display = "none";
-    
-    // Hide error message initially
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+        logoutBtn.style.display = "none";
+    }
+
+    // Hide error message and loading initially
     const errorDiv = document.getElementById("credentialError");
+    const loadingDiv = document.getElementById("oauthLoading");
     if (errorDiv) {
         errorDiv.style.display = "none";
     }
-    
-    // Load existing credentials if any
-    const existingWorkspace = getFromStorage("workspaceId");
-    const existingToken = getFromStorage("dustToken");
-    
-    document.getElementById("workspaceId").value = existingWorkspace || "";
-    document.getElementById("dustToken").value = existingToken || "";
-    document.getElementById("region").value = getFromStorage("region") || "";
-    
+    if (loadingDiv) {
+        loadingDiv.style.display = "none";
+    }
+
     // Show/hide remove button based on whether credentials exist
+    const accessToken = getFromStorage("accessToken");
+    const workspaceId = getFromStorage("workspaceId");
     const removeBtn = document.getElementById("removeCredentialsBtn");
     if (removeBtn) {
-        removeBtn.style.display = (existingWorkspace || existingToken) ? "block" : "none";
+        removeBtn.style.display = (accessToken && workspaceId) ? "block" : "none";
     }
 }
 
@@ -97,7 +147,10 @@ function showCredentialSetup() {
 function showMainForm() {
     document.getElementById("credentialSetup").style.display = "none";
     document.getElementById("myForm").style.display = "block";
-    document.getElementById("updateCredentialsBtn").style.display = "inline-block";
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+        logoutBtn.style.display = "inline-block";
+    }
 }
 
 // Show remove confirmation
@@ -116,131 +169,131 @@ function hideRemoveConfirmation() {
 function removeCredentials() {
     // Clear all stored credentials
     localStorage.removeItem("dust_excel_workspaceId");
-    localStorage.removeItem("dust_excel_dustToken");
+    localStorage.removeItem("dust_excel_accessToken");
+    localStorage.removeItem("dust_excel_refreshToken");
     localStorage.removeItem("dust_excel_region");
     localStorage.removeItem("dust_excel_credentialsConfigured");
-    
-    // Clear input fields
-    document.getElementById("workspaceId").value = "";
-    document.getElementById("dustToken").value = "";
-    document.getElementById("region").value = "";
-    
+    localStorage.removeItem("dust_excel_user");
+    localStorage.removeItem("dust_excel_oauthCodeVerifier");
+    localStorage.removeItem("dust_excel_oauthRedirectUri");
+
     // Hide remove button and confirmation
     document.getElementById("removeCredentialsBtn").style.display = "none";
     document.getElementById("removeConfirmation").style.display = "none";
-    
+
+    const connectBtn = document.getElementById("connectWorkOS");
+    if (connectBtn) {
+        connectBtn.style.display = "block";
+    }
+
     // Hide error message
     const errorDiv = document.getElementById("credentialError");
     if (errorDiv) {
         errorDiv.style.display = "none";
     }
-    
+
     // Clear the assistant dropdown
     const select = document.getElementById("assistant");
     select.innerHTML = '<option value=""></option>';
     select.disabled = true;
-    
+
     // Reset Select2
     $("#assistant").select2({
         placeholder: "Loading agents...",
         allowClear: true,
         width: "100%"
     });
-    
+
     // Clear any error messages in the main form
     const loadError = document.getElementById("loadError");
     if (loadError) {
         loadError.style.display = "none";
     }
-    
+
     // Show credential setup as if starting fresh
     document.getElementById("credentialSetup").style.display = "block";
     document.getElementById("myForm").style.display = "none";
-    document.getElementById("updateCredentialsBtn").style.display = "none";
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+        logoutBtn.style.display = "none";
+    }
+
+    showCredentialSetup();
 }
 
-async function saveCredentials() {
-    const workspaceId = document.getElementById("workspaceId").value;
-    const dustToken = document.getElementById("dustToken").value;
-    const region = document.getElementById("region").value;
-    
-    // Hide any previous error
+// Handle successful OAuth
+async function handleOAuthSuccess(data) {
+    const { access_token, user, refresh_token } = data;
+
+    if (!access_token) {
+        throw new Error('No access token received');
+    }
+
+    // Store credentials
+    saveToStorage("accessToken", access_token);
+    saveToStorage("refreshToken", refresh_token);
+
+    const { workspaceId, region } = DustOfficeAuth.decodeToken(access_token);
+
+    saveToStorage("workspaceId", workspaceId);
+    saveToStorage("region", region);
+    saveToStorage("user", JSON.stringify(user));
+
+    // Hide loading and error
+    const loadingDiv = document.getElementById("oauthLoading");
     const errorDiv = document.getElementById("credentialError");
+    if (loadingDiv) {
+        loadingDiv.style.display = "none";
+    }
     if (errorDiv) {
         errorDiv.style.display = "none";
     }
-    
-    if (!workspaceId || !dustToken) {
-        if (errorDiv) {
-            errorDiv.textContent = "Please enter both Workspace ID and API Key";
-            errorDiv.style.display = "block";
-        }
-        return;
-    }
-    
-    // Show loading state
-    const saveBtn = document.getElementById("saveSetup");
-    const originalText = saveBtn.textContent;
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner"></span> Validating...';
-    
+
+    // If we don't have workspace_id from OAuth, we might need to fetch it
+    // For now, we'll try to use the token to get workspace info
     try {
-        // Temporarily save credentials to test them
-        saveToStorage("workspaceId", workspaceId);
-        saveToStorage("dustToken", dustToken);
-        saveToStorage("region", region);
-        
-        // Test credentials by fetching agents using the proxy
-        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
-        const data = await callDustAPI(apiPath);
-        
-        // Credentials are valid, save the configured flag
-        saveToStorage("credentialsConfigured", "true");
-        
-        // Hide error if it was showing
-        if (errorDiv) {
-            errorDiv.style.display = "none";
+        if (!workspaceId) {
+            // Workspace ID not available from OAuth, show error
+            throw new Error('Workspace ID not found. Please ensure your WorkOS integration is configured correctly.');
         }
-        
+
+        saveToStorage("workspaceId", workspaceId);
+
+        // Test credentials by fetching agents
+        const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
+        await callDustAPI(apiPath);
+
+        // Credentials are valid
+        saveToStorage("credentialsConfigured", "true");
+
         // Switch to main form
         showMainForm();
         loadAssistants();
         initializeSelect2();
     } catch (error) {
-        // Remove invalid credentials
-        localStorage.removeItem("dust_excel_workspaceId");
-        localStorage.removeItem("dust_excel_dustToken");
-        localStorage.removeItem("dust_excel_region");
-        localStorage.removeItem("dust_excel_credentialsConfigured");
-        
-        // Show error message
+        console.error('Failed to validate token:', error);
+        // Still show error but keep token stored
         if (errorDiv) {
-            errorDiv.textContent = "❌ Invalid credentials. Please check your Workspace ID and API Key.";
+            errorDiv.textContent = "❌ " + error.message;
             errorDiv.style.display = "block";
         }
-    } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = originalText;
+        const connectBtn = document.getElementById("connectWorkOS");
+        if (connectBtn) {
+            connectBtn.style.display = "block";
+        }
+        if (loadingDiv) {
+            loadingDiv.style.display = "none";
+        }
     }
-}
-
-
-// Dust API functions
-function getDustBaseUrl() {
-    const region = getFromStorage("region");
-    if (region && region.toLowerCase() === "eu") {
-        return "https://eu.dust.tt";
-    }
-    return "https://dust.tt";
 }
 
 async function loadAssistants() {
-    const token = getFromStorage("dustToken");
+    const token = getFromStorage("accessToken");
     const workspaceId = getFromStorage("workspaceId");
-    
+
     if (!token || !workspaceId) {
         const errorDiv = document.getElementById("loadError");
-        errorDiv.textContent = "❌ Please configure Dust credentials first";
+        errorDiv.textContent = "❌ Please connect your Dust account first";
         errorDiv.style.display = "block";
         $("#assistant").select2({
             placeholder: "Failed to load agents",
@@ -249,42 +302,42 @@ async function loadAssistants() {
         });
         return;
     }
-    
+
     try {
         const apiPath = `/api/v1/w/${workspaceId}/assistant/agent_configurations`;
         const data = await callDustAPI(apiPath);
         const assistants = data.agentConfigurations;
-        
+
         const sortedAssistants = assistants.sort((a, b) => a.name.localeCompare(b.name));
-        
+
         const select = document.getElementById("assistant");
         select.innerHTML = "";
-        
+
         const emptyOption = document.createElement("option");
         emptyOption.value = "";
         select.appendChild(emptyOption);
-        
+
         sortedAssistants.forEach(a => {
             const option = document.createElement("option");
             option.value = a.sId;
             option.textContent = a.name;
             select.appendChild(option);
         });
-        
+
         select.disabled = false;
         document.getElementById("loadError").style.display = "none";
-        
+
         $("#assistant").select2({
             placeholder: "Select an agent",
             allowClear: true,
             width: "100%",
             language: {
-                noResults: function() {
+                noResults: function () {
                     return "No agents found";
                 }
             }
         });
-        
+
         if (assistants.length === 0) {
             $("#assistant").select2({
                 placeholder: "No agents available",
@@ -311,7 +364,7 @@ async function useSelection() {
             const range = context.workbook.getSelectedRange();
             range.load("address");
             await context.sync();
-            
+
             const address = range.address.split("!")[1]; // Remove sheet name if present
             document.getElementById("cellRange").value = address;
             updateRangeInfo(address);
@@ -328,7 +381,7 @@ async function useTargetSelection() {
             const range = context.workbook.getSelectedRange();
             range.load("address");
             await context.sync();
-            
+
             const address = range.address.split("!")[1]; // Remove sheet name if present
             // Extract just the column letter(s)
             const columnMatch = address.match(/^([A-Z]+)/);
@@ -348,17 +401,17 @@ async function updateRangeInfo(rangeNotation) {
         document.getElementById("headerRowSection").style.display = "none";
         return;
     }
-    
+
     try {
         await Excel.run(async (context) => {
             const sheet = context.workbook.worksheets.getActiveWorksheet();
             const range = sheet.getRange(rangeNotation);
             range.load(["rowCount", "columnCount"]);
             await context.sync();
-            
+
             const infoDiv = document.getElementById("rangeInfo");
             const headerSection = document.getElementById("headerRowSection");
-            
+
             if (range.columnCount > 1) {
                 infoDiv.textContent = `Selected: ${range.rowCount} rows × ${range.columnCount} columns`;
                 headerSection.style.display = "block";
@@ -379,19 +432,19 @@ function cancelProcessing() {
     if (cancelRequested || processingProgress.status === "cancelled") {
         return;
     }
-    
+
     cancelRequested = true;
     processingProgress.status = "cancelled";
-    
+
     // Abort all ongoing requests
     if (currentAbortController) {
         currentAbortController.abort();
         currentAbortController = null;
     }
-    
+
     // Clear the processing ID to prevent UI updates from cancelled requests
     currentProcessingId = null;
-    
+
     document.getElementById("cancelBtn").style.display = "none";
     document.getElementById("cancelBtn").disabled = true;
     document.getElementById("submitBtn").disabled = false;
@@ -405,26 +458,26 @@ function cancelProcessing() {
 // Process functions
 async function handleSubmit(e) {
     e.preventDefault();
-    
+
     const assistantSelect = document.getElementById("assistant");
     const cellRange = document.getElementById("cellRange");
     const targetColumn = document.getElementById("targetColumn").value;
-    
+
     if (!assistantSelect.value) {
         alert("Please select an agent");
         return;
     }
-    
+
     if (!cellRange.value) {
         alert("Please select input cells");
         return;
     }
-    
+
     if (!/^[A-Za-z]+$/.test(targetColumn)) {
         alert("Please enter a valid target column letter (e.g., A, B, C)");
         return;
     }
-    
+
     // Check actual processable row count and warn if over 100
     let actualRowsToProcess = 0;
     try {
@@ -433,23 +486,23 @@ async function handleSubmit(e) {
             const range = sheet.getRange(cellRange.value);
             range.load(["values", "rowCount", "columnCount"]);
             await context.sync();
-            
+
             const numColumns = range.columnCount;
             const headerRow = parseInt(document.getElementById("headerRow").value) || 1;
-            
+
             // Count non-empty rows that will actually be processed
             for (let i = 0; i < range.rowCount; i++) {
                 const actualRowNumber = range.rowIndex + i + 1; // 1-based row number
-                
+
                 // Skip header row if processing multiple columns
                 if (numColumns > 1 && actualRowNumber === headerRow) {
                     continue;
                 }
-                
+
                 // Check if row has any content
                 const rowValues = range.values[i];
                 let hasContent = false;
-                
+
                 if (numColumns === 1) {
                     hasContent = rowValues[0] && rowValues[0].toString().trim() !== "";
                 } else {
@@ -461,12 +514,12 @@ async function handleSubmit(e) {
                         }
                     }
                 }
-                
+
                 if (hasContent) {
                     actualRowsToProcess++;
                 }
             }
-            
+
             if (actualRowsToProcess > 100) {
                 const message = `You're about to process ${actualRowsToProcess} rows with content. Processing this many rows may take a while and could hit rate limits.\n\nAre you sure you want to continue?`;
                 if (!confirm(message)) {
@@ -481,14 +534,14 @@ async function handleSubmit(e) {
         }
         console.error("Error checking row count:", error);
     }
-    
+
     // Generate a unique ID for this processing run
     const processingId = Date.now() + '_' + Math.random();
     currentProcessingId = processingId;
-    
+
     // Create new abort controller for this run
     currentAbortController = new AbortController();
-    
+
     cancelRequested = false;
     isRateLimited = false;
     processingProgress.status = "idle";
@@ -496,7 +549,7 @@ async function handleSubmit(e) {
     document.getElementById("cancelBtn").style.display = "block";
     document.getElementById("cancelBtn").disabled = false;
     document.getElementById("status").innerHTML = '<div class="spinner"></div> Analyzing selection...';
-    
+
     try {
         await processWithAssistant(
             assistantSelect.value,
@@ -507,7 +560,7 @@ async function handleSubmit(e) {
             processingId,
             currentAbortController.signal
         );
-        
+
         // Only update UI if this is the current processing run
         if (processingId === currentProcessingId) {
             document.getElementById("submitBtn").disabled = false;
@@ -539,43 +592,43 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
     let BATCH_SIZE = 10;
     let BATCH_DELAY = 1000;
     let retryDelay = 1000; // Initial retry delay for rate limits
-    
-    const token = getFromStorage("dustToken");
+
+    const token = getFromStorage("accessToken");
     const workspaceId = getFromStorage("workspaceId");
-    
+
     if (!token || !workspaceId) {
-        throw new Error("Please configure your Dust credentials first");
+        throw new Error("Please connect your Dust account first");
     }
-    
+
     try {
         await Excel.run(async (context) => {
             console.log("Starting Excel.run with range:", rangeA1Notation, "targetColumn:", targetColumn, "headerRow:", headerRow);
-            
+
             const sheet = context.workbook.worksheets.getActiveWorksheet();
             const selectedRange = sheet.getRange(rangeA1Notation);
             selectedRange.load(["values", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
             await context.sync();
-            
-            console.log("Range loaded - rows:", selectedRange.rowCount, "cols:", selectedRange.columnCount, 
-                       "startRow:", selectedRange.rowIndex, "startCol:", selectedRange.columnIndex);
-            
+
+            console.log("Range loaded - rows:", selectedRange.rowCount, "cols:", selectedRange.columnCount,
+                "startRow:", selectedRange.rowIndex, "startCol:", selectedRange.columnIndex);
+
             const selectedValues = selectedRange.values;
             const numColumns = selectedRange.columnCount;
             const numRows = selectedRange.rowCount;
             const startRow = selectedRange.rowIndex;
             const startCol = selectedRange.columnIndex;
             const targetColIndex = columnToIndex(targetColumn) - 1; // Convert to 0-based
-            
+
             console.log("Target column index:", targetColIndex);
-            
+
             // Get headers if multiple columns
             let headers = [];
             if (numColumns > 1) {
                 // Calculate the header row index relative to the selection
                 const headerRowIndex = headerRow - 1 - startRow;
-                
+
                 console.log("Header row index calculation: headerRow=", headerRow, "startRow=", startRow, "headerRowIndex=", headerRowIndex);
-                
+
                 if (headerRowIndex >= 0 && headerRowIndex < numRows) {
                     // Header is within the selected range
                     headers = selectedValues[headerRowIndex];
@@ -590,21 +643,21 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                     console.log("Headers fetched separately:", headers);
                 }
             }
-            
+
             const cellsToProcess = [];
-            
+
             for (let i = 0; i < numRows; i++) {
                 const currentRow = startRow + i;
                 const actualRowNumber = currentRow + 1; // 1-based row number for display
-                
+
                 // Skip header row if processing multiple columns
                 if (numColumns > 1 && actualRowNumber === headerRow) {
                     console.log("Skipping header row at", actualRowNumber);
                     continue;
                 }
-                
+
                 let inputContent = "";
-                
+
                 if (numColumns === 1) {
                     const inputValue = selectedValues[i][0];
                     if (!inputValue) {
@@ -616,37 +669,37 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                 } else {
                     const rowValues = selectedValues[i];
                     const contentParts = [];
-                    
+
                     for (let j = 0; j < numColumns; j++) {
                         const header = headers[j] || `Column ${j + 1}`;
                         const value = rowValues[j] || "";
                         contentParts.push(`${header}: ${value}`);
                     }
-                    
+
                     inputContent = contentParts.join("\n");
-                    
+
                     if (!inputContent.trim()) {
                         const targetCell = sheet.getRangeByIndexes(currentRow, targetColIndex, 1, 1);
                         targetCell.values = [["No input value"]];
                         continue;
                     }
                 }
-                
+
                 cellsToProcess.push({
                     row: currentRow,
                     col: targetColIndex,
                     inputContent: inputContent
                 });
             }
-        
+
             const totalCells = cellsToProcess.length;
             // Reset and set processing status
             processingProgress = { current: 0, total: totalCells, status: "processing" };
             cancelRequested = false;
             updateProgressDisplay(processingId);
-            
+
             console.log("Processing", totalCells, "cells");
-            
+
             // Process in batches
             for (let i = 0; i < cellsToProcess.length; i += BATCH_SIZE) {
                 // Check if cancellation was requested
@@ -654,40 +707,40 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                     console.log("Processing cancelled by user");
                     break;
                 }
-                
+
                 const batch = cellsToProcess.slice(i, i + BATCH_SIZE);
-                
+
                 const promises = batch.map(async (item) => {
                     // Check if this processing was cancelled or replaced
                     if (processingId !== currentProcessingId) {
                         return;
                     }
-                    
+
                     // Retry logic for rate limits
                     let retries = 0;
                     const maxRetries = 3;
                     let lastError = null;
-                    
+
                     while (retries <= maxRetries && processingId === currentProcessingId && !cancelRequested) {
                         const payload = {
-                        message: {
-                            content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
-                            mentions: [{ configurationId: assistantId }],
-                            context: {
-                                username: "excel",
-                                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                                fullName: "Excel User",
-                                email: "excel@dust.tt",
-                                profilePictureUrl: "",
-                                origin: "excel"
-                            }
-                        },
-                        blocking: true,
-                        title: "Excel Conversation",
-                        visibility: "unlisted",
-                        skipToolsValidation: true
-                    };
-                    
+                            message: {
+                                content: (instructions || "") + "\n\nInput:\n" + item.inputContent,
+                                mentions: [{ configurationId: assistantId }],
+                                context: {
+                                    username: "excel",
+                                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                    fullName: "Excel User",
+                                    email: "excel@dust.tt",
+                                    profilePictureUrl: "",
+                                    origin: "excel"
+                                }
+                            },
+                            blocking: true,
+                            title: "Excel Conversation",
+                            visibility: "unlisted",
+                            skipToolsValidation: true
+                        };
+
                         try {
                             const apiPath = `/api/v1/w/${workspaceId}/assistant/conversations`;
                             const result = await callDustAPI(apiPath, {
@@ -699,9 +752,9 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                                 signal: abortSignal
                             });
                             const content = result.conversation.content;
-                            
+
                             const lastAgentMessage = content.flat().reverse().find(msg => msg.type === "agent_message");
-                            
+
                             // Only update cell if this is still the current processing
                             if (processingId === currentProcessingId && !cancelRequested) {
                                 const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
@@ -709,31 +762,31 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                                 const agentContent = lastAgentMessage ? lastAgentMessage.content.trim() : "No response";
                                 targetCell.values = [[agentContent]];
                                 targetCell.format.fill.color = "#f0f9ff"; // Light blue background
-                                
+
                                 // Sync immediately to update the cell in Excel
                                 await context.sync();
                             }
-                            
+
                             // Success - exit retry loop
                             break;
-                            
+
                         } catch (error) {
                             lastError = error;
-                            
+
                             // Check if it's an abort error
                             if (error.name === 'AbortError') {
                                 break;
                             }
-                            
+
                             // Check if it's a rate limit error (429) or contains rate limit message
-                            const isRateLimit = error.message.includes('429') || 
-                                              error.message.toLowerCase().includes('rate limit') ||
-                                              error.message.toLowerCase().includes('too many requests');
-                            
+                            const isRateLimit = error.message.includes('429') ||
+                                error.message.toLowerCase().includes('rate limit') ||
+                                error.message.toLowerCase().includes('too many requests');
+
                             if (isRateLimit && retries < maxRetries) {
                                 retries++;
                                 console.log(`Rate limit hit, retry ${retries}/${maxRetries} after ${retryDelay}ms`);
-                                
+
                                 // Update status to show rate limiting
                                 if (processingId === currentProcessingId) {
                                     isRateLimited = true;
@@ -750,11 +803,11 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                                     }, 5000);
                                     updateProgressDisplay(processingId);
                                 }
-                                
+
                                 // Wait with exponential backoff
                                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                                 retryDelay = Math.min(retryDelay * 2, 30000); // Max 30 seconds
-                                
+
                                 // Reduce batch size and increase delay for future batches
                                 if (retries === 1) {
                                     BATCH_SIZE = Math.max(Math.floor(BATCH_SIZE / 2), 1);
@@ -764,13 +817,13 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                             } else {
                                 // Not a rate limit error or max retries reached
                                 console.error("Error processing cell:", error);
-                                
+
                                 // Only update cell with error if this is still the current processing
                                 if (processingId === currentProcessingId && !cancelRequested) {
                                     const targetCell = sheet.getRangeByIndexes(item.row, item.col, 1, 1);
                                     targetCell.values = [["Error: " + error.message]];
                                     targetCell.format.fill.color = "#fee2e2"; // Light red background
-                                    
+
                                     // Sync immediately to update the cell in Excel
                                     await context.sync();
                                 }
@@ -778,17 +831,17 @@ async function processWithAssistant(assistantId, instructions, rangeA1Notation, 
                             }
                         }
                     }
-                    
-                    
+
+
                     // Only increment progress if this is still the current processing
                     if (processingId === currentProcessingId && !cancelRequested && processingProgress.status !== "cancelled") {
                         processingProgress.current++;
                         updateProgressDisplay(processingId);
                     }
                 });
-                
+
                 await Promise.all(promises);
-                
+
                 // Use the potentially adjusted BATCH_DELAY
                 if (i + BATCH_SIZE < cellsToProcess.length) {
                     await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
@@ -809,7 +862,7 @@ function updateProgressDisplay(processingId) {
     if (processingId !== currentProcessingId) {
         return;
     }
-    
+
     const statusDiv = document.getElementById("status");
     if (processingProgress.status === "processing" && !cancelRequested) {
         if (isRateLimited) {
@@ -826,14 +879,14 @@ function updateProgressDisplay(processingId) {
 // Helper function to convert column letter to index (1-based)
 function columnToIndex(column) {
     if (!column || typeof column !== "string") return null;
-    
+
     column = column.toUpperCase();
     let sum = 0;
-    
+
     for (let i = 0; i < column.length; i++) {
         sum *= 26;
         sum += column.charCodeAt(i) - "A".charCodeAt(0) + 1;
     }
-    
+
     return sum;
 }
