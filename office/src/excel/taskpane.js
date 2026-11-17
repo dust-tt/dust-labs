@@ -22,8 +22,17 @@ Office.onReady((info) => {
         document.getElementById("confirmRemove").onclick = removeCredentials;
         document.getElementById("cancelRemove").onclick = hideRemoveConfirmation;
         
-        // Initialize
-        checkCredentialsAndInitialize();
+        // Invite users to the new add-in before initializing this one. If the
+        // shared script failed to load, start the add-in as before.
+        if (typeof showMigrationNoticeOrContinue === "function") {
+          showMigrationNoticeOrContinue({
+            appName: "Excel",
+            storagePrefix: "dust_excel",
+            onContinue: checkCredentialsAndInitialize,
+          });
+        } else {
+          checkCredentialsAndInitialize();
+        }
     }
 });
 

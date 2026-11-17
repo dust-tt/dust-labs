@@ -8,6 +8,10 @@
   ],
   "rewrites": [
     {
+      "source": "/shared/:path*",
+      "destination": "/src/shared/:path*"
+    },
+    {
       "source": "/excel/dust-api.js",
       "destination": "/src/shared/dust-api.js"
     },
