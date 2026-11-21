@@ -163,17 +163,30 @@ function sanitizeDocumentId(id: string): string {
 }
 
 async function fetchCompanies(updatedSince?: Date): Promise<PlanhatCompany[]> {
+  const allCompanies: PlanhatCompany[] = [];
+  let skip = 0;
+  const limit = 50;
+
   try {
-    const params: any = {};
-    if (updatedSince) {
-      params.updatedAfter = updatedSince.toISOString();
+    while (true) {
+      const params: any = { limit, skip };
+      if (updatedSince) {
+        params.updatedAfter = updatedSince.toISOString();
+      }
+
+      const response = await planhatLimiter.schedule(() =>
+        planhatApi.get("/companies", { params })
+      );
+
+      const companies: PlanhatCompany[] = response.data || [];
+      allCompanies.push(...companies);
+
+      if (companies.length < limit) {
+        break; // No more pages
+      }
+      skip += limit;
     }
-
-    const response = await planhatLimiter.schedule(() =>
-      planhatApi.get("/companies", { params })
-    );
-
-    return response.data || [];
+    return allCompanies;
   } catch (error) {
     logPlanhatError("companies", updatedSince?.toISOString() || "all", error);
     throw error;
